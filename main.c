@@ -56,7 +56,7 @@ int main(int argc, char** argv)
     int          regex_i;            
     const char*  regex_str = "II......CR";
     __uint8_t    transfer[cmd_options.searchsize];
-    long int     offset = 116267458560;
+    //long int     offset = 116267458560;
     long long    i;
     int          j;
     
@@ -72,7 +72,7 @@ int main(int argc, char** argv)
     
     for (i = cmd_options.offset_start; i < cmd_options.offset_end; i+=cmd_options.blocksize ) {
         
-        fseek(input_file, offset+i, 0);
+        fseek(input_file, i, 0);
         //printf("\n>> Needle moved to %ld", offset+i);
         //fflush(stdout);
 
@@ -85,10 +85,11 @@ int main(int argc, char** argv)
             printf("\nBlock %lld", i);
 
 
-
-        for (j = 0; j < cmd_options.blocksize; j+=cmd_options.searchsize){
+        for (j = 0; j < cmd_options.blocksize; j+=cmd_options.searchsize) {
+            
             memcpy(transfer, &buffer[j] , cmd_options.searchsize);
             regex_i = regexec(&regex, transfer, 0, NULL, REG_EXTENDED);
+            
             if(!regex_i) {
                 printf("\nMATCH!");
                 fflush(stdout);
@@ -260,6 +261,21 @@ void get_cmd_options(Cmd_Options* cmd_options)
     }
     if(cmd_options->output_folder == "") {
         getcwd(cmd_options->output_folder, sizeof(cmd_options->output_folder));
+        if(cmd_options->verbose) {
+            printf("\nSetting current directory for output: %s", 
+                   cmd_options->output_folder);
+        }
+    }
+
+
+    if(cmd_options->offset_end = 0) {
+        FILE* file_size_stream = fopen(cmd_options->input, "r");
+        fseek(file_size_stream, 0, SEEK_END);
+        cmd_options->offset_end = ftell(file_size_stream);
+        fclose(file_size_stream);
+        if(cmd_options->verbose){
+            printf("\nInput file size: %lld", cmd_options->offset_end);
+        }
     }
 
     if (cmd_options->input == "") {
