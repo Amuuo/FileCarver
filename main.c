@@ -7,11 +7,11 @@
 #include <unistd.h>
 #include <stdio.h>
 
-
+typedef __uint8_t byte;
 
 typedef struct Block_info {
     long long* headers;
-    __uint8_t** info;        
+    byte** info;        
     int header_count;
 } Block_info;
 
@@ -31,7 +31,7 @@ typedef struct Cmd_Options {
 
 void resize_block_info(Block_info* block);
 void init_block_memory(Block_info* block);
-void add_header_info(Block_info*, __uint8_t*, long long);    
+void add_header_info(Block_info*, byte*, long long);    
 void open_io_files(FILE*, FILE*, FILE*, Cmd_Options*);
 void get_cmd_options();
 
@@ -55,16 +55,19 @@ int main(int argc, char** argv)
     FILE*        header_file;    
     int          filesize;            
     int          regex_i;            
-    const char*  regex_str = "II......CR";
-    __uint8_t    transfer[cmd_options.searchsize];
-    //long int     offset = 116267458560;
+    const char*  regex_str = "II......CR";        
     long long    i;
     int          j;
     
-    printf("\n>> Buffer alloc...");
-    __uint8_t* buffer = malloc(cmd_options.blocksize);
-    memset(buffer, 0, cmd_options.blocksize);
-    printf("\n>> Opening input file %s", cmd_options.input);
+    byte* transfer = (byte*)malloc(sizeof(byte)*cmd_options.searchsize);    
+    if (cmd_options.verbose){
+        printf("\n>> Transfer alloc... %lld bytes", sizeof(byte)*cmd_options.searchsize);
+    }
+    
+    byte* buffer = (byte*)malloc(sizeof(byte)*cmd_options.blocksize);
+    if(cmd_options.verbose){
+        printf("\n>> Buffer alloc... %lld bytes", sizeof(byte)*cmd_options.blocksize);
+    }
     fflush(stdout);
         
     open_io_files(input_file, output_file, header_file, &cmd_options);    
@@ -127,13 +130,13 @@ void resize_block_info(Block_info* block)
         (long long*)realloc(block->headers, sizeof(long long)*count);                            
     
     block->info = 
-        (__uint8_t**)realloc(block->info, sizeof(__uint8_t*)*count);    
+        (byte**)realloc(block->info, sizeof(byte*)*count);    
     
-    block->info[count-1] = (__uint8_t*)malloc(sizeof(__uint8_t)*128);
+    block->info[count-1] = (byte*)malloc(sizeof(byte)*128);
     
     printf("\nblock_info.headers realloc: %ld", sizeof(long long)*count);
-    printf("\nblock_info.info realloc: %ld", sizeof(__uint8_t*)*count);    
-    printf("\nblock_info.info[%d] malloc: %ld", count-1, sizeof(__uint8_t)*128);    
+    printf("\nblock_info.info realloc: %ld", sizeof(byte*)*count);    
+    printf("\nblock_info.info[%d] malloc: %ld", count-1, sizeof(byte)*128);    
     
     fflush(stdout);                
 }
@@ -144,14 +147,14 @@ void init_block_memory(Block_info* block)
 {
     block->header_count = 0;    
     block->headers = (long long*)malloc(sizeof(long long));                            
-    block->info = (__uint8_t**)malloc(sizeof(__uint8_t*));
-    block->info[0] = (__uint8_t*)malloc(sizeof(__uint8_t)*128);
+    block->info = (byte**)malloc(sizeof(byte*));
+    block->info[0] = (byte*)malloc(sizeof(byte)*128);
 }
 
 
 
 
-void add_header_info(Block_info* block, __uint8_t* transfer_info, long long block_offset) 
+void add_header_info(Block_info* block, byte* transfer_info, long long block_offset) 
 {    
     memcpy(block->info[block->header_count], transfer_info, 128);      
     block->headers[block->header_count++] = block_offset;
@@ -166,8 +169,7 @@ void open_io_files(FILE* input_file, FILE* output_file, FILE* header_file,
         fprintf(stderr, "\n>> Input file failed to open");
     }
     else {
-        printf("\n>> Input file opened: %s", cmd_options->input);
-        fflush(stdout);
+        printf("\n>> Input file opened: %s", cmd_options->input);        
     }
     char file_str[50];
     strcpy(file_str, cmd_options->output_folder);
@@ -176,9 +178,9 @@ void open_io_files(FILE* input_file, FILE* output_file, FILE* header_file,
             exit(1);
     }
     else {
-        printf("\n>> Header file opened %s", file_str);
-    }
-    memset(file_str, 0, 50);
+        printf("\n>> Header file opened: %s", file_str);
+    }    
+    memset(file_str, '\0', 50);
     strcpy(file_str, cmd_options->output_folder);
     if (!(output_file = fopen(strcat(file_str,"cr2_test2.cr2"), "wb+"))) {
             fprintf(stderr, "\n>> Output file failed to open");
@@ -187,6 +189,7 @@ void open_io_files(FILE* input_file, FILE* output_file, FILE* header_file,
     else {
         printf("\n>> Output file opened: %s", file_str);
     }
+    fflush(stdout);
     
 }
 
@@ -217,37 +220,29 @@ void get_cmd_options(Cmd_Options* cmd_options)
         switch (cmd_option) {
             
             case 'b':
-                cmd_options->blocksize = atoi(optarg);
-                printf("\n>> Blocksize: %d", cmd_options->blocksize);
+                cmd_options->blocksize = atoi(optarg);                
                 break;
             
             case 'S':
                 cmd_options->offset_start = atoll(optarg);
-                printf("\n>> Offset Start: %lld", cmd_options->offset_start);
                 break;
             
             case 'E':
                 cmd_options->offset_end = atoll(optarg);
-                printf("\n>> Offset End: %lld", cmd_options->offset_end);
                 break;
 
             case 's':
-                cmd_options->searchsize = optarg;
-                printf("\n>> Search Size: %s", cmd_options->searchsize);
+                cmd_options->searchsize = atoi(optarg);
                 break;
             
             case 'i':
-                cmd_options->input = (char*)malloc(sizeof(char)*30);
-                memset(cmd_options->input, 0, 30);                    
+                cmd_options->input = (char*)malloc(sizeof(char)*30);                
                 strcpy(cmd_options->input, optarg);                    
-                printf("\n>> Input file: %s", cmd_options->input); 
                 break;
 
             case 'o':
-                cmd_options->output_folder = (char*)malloc(sizeof(char)*30);
-                memset(cmd_options->output_folder, 0, 30);                 
+                cmd_options->output_folder = (char*)malloc(sizeof(char)*30);                       
                 strcpy(cmd_options->output_folder, optarg);
-                printf("\n>> Output folder: %s", cmd_options->output_folder);
                 break;
             
             case 'v':
@@ -292,12 +287,19 @@ void get_cmd_options(Cmd_Options* cmd_options)
         cmd_options->offset_end = ftell(file_size_stream);
         fclose(file_size_stream);        
     }
+
     if(cmd_options->verbose){
+        printf("\n>> Offset Start: %lld", cmd_options->offset_start);
         printf("\n>> No offset end detected, setting offset to end of file");
-        printf("\n>> Offset End: %lld", cmd_options->offset_end);
-        printf("\n>> Input file size: %lld", cmd_options->offset_end - cmd_options->offset_start);
+        printf("\n>> Offset End: %lld bytes", cmd_options->offset_end);
+        printf("\n>> Input file: %s", cmd_options->input); 
+        printf("\n>> Input file size: %lld bytes", cmd_options->offset_end - cmd_options->offset_start);
+        printf("\n>> Blocksize: %d bytes", cmd_options->blocksize);        
+        printf("\n>> Search Size: %d bytes", cmd_options->searchsize);
+        printf("\n>> Output folder: %s", cmd_options->output_folder);
     }
 
+    
     if (!cmd_options->input) {
         printf("\n>> Input file required");
         exit(1);
