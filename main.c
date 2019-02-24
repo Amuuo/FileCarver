@@ -11,11 +11,13 @@
 
 typedef __uint8_t byte;
 
+
 typedef struct Block_info {
     long long* headers;
     byte** info;        
     int header_count;
 } Block_info;
+
 
 
 typedef struct Cmd_Options {
@@ -31,7 +33,7 @@ typedef struct Cmd_Options {
     char*      output_file;
 } Cmd_Options;
 
-int terminate_early;
+
 
 void resize_block_info(Block_info*, int, Cmd_Options*);
 void init_block_memory(Block_info*, int);
@@ -40,6 +42,16 @@ void open_io_files(FILE**, FILE**, Cmd_Options*);
 void get_cmd_options();
 void print_headers_to_file(Cmd_Options*, Block_info*, FILE**);
 void sig_handler(int signal_number);
+
+
+
+int terminate_early;
+
+
+
+
+
+
 
 /*======================
            MAIN
@@ -50,76 +62,82 @@ int main(int argc, char** argv)
     signal(SIGINT, sig_handler);
 
     Block_info block_info;
-    Cmd_Options cmd_options = {argc, argv, 0, 32768, 0, 0, 128, NULL, NULL};
+    Cmd_Options cmds = {argc, argv, 0, 32768, 0, 0, 128, NULL, NULL};
     
-    get_cmd_options(&cmd_options);
-    init_block_memory(&block_info, cmd_options.searchsize);
+    get_cmd_options(&cmds);
+    init_block_memory(&block_info, cmds.searchsize);
     setlocale(LC_NUMERIC, "");
 
     FILE*        input_file;
     FILE*        output_file;
-    FILE*        header_file;    
-    int          filesize;            
+    FILE*        header_file;                  
     regex_t      regex;
     int          regex_i;            
-    const char*  regex_str = "II......CR";        
+    const char*  regex_str = "^II.{6}CR";        
     long long    i;
     int          j;
     
 
 
-    byte* transfer = (byte*)malloc(cmd_options.searchsize);    
-    if (cmd_options.verbose){
-        printf("\n>> Transfer alloc... %'lld bytes", cmd_options.searchsize);
+
+    byte* transfer = (byte*)malloc(cmds.searchsize);    
+    if (cmds.verbose){
+        printf("\n>> Transfer alloc... %'d bytes", cmds.searchsize);
     }
     
-    byte* buffer = (byte*)malloc(sizeof(byte)*cmd_options.blocksize);
-    if(cmd_options.verbose){
-        printf("\n>> Buffer alloc... %'lld bytes", cmd_options.blocksize);
+    byte* buffer = (byte*)malloc(cmds.blocksize);
+    if(cmds.verbose){
+        printf("\n>> Buffer alloc... %'d bytes", cmds.blocksize);
     }    
-    cmd_options.output_file = (char*)malloc(50);
+    cmds.output_file = (char*)malloc(50);
 
 
-    open_io_files(&input_file, &output_file, &cmd_options);    
+    open_io_files(&input_file, &output_file, &cmds);    
         
     regex_i = regcomp(&regex, regex_str, REG_EXTENDED);    
     
-    for (i = cmd_options.offset_start; i < cmd_options.offset_end; i+=cmd_options.blocksize ) {
+    
+    for (i = cmds.offset_start; i < cmds.offset_end; i+=cmds.blocksize ) {
                         
         fseek(input_file, i, 0);        
         
-        if ((cmd_options.offset_end - i) < cmd_options.blocksize)
-            cmd_options.blocksize  = cmd_options.offset_end - i;
+        /*
+        if ((cmds.offset_end - i) < cmds.blocksize) {
+            cmds.blocksize  = cmds.offset_end - i;
+            buffer = (byte*)realloc(buffer, cmds.blocksize);
+        }
+        */
                 
-        if ((fread(buffer, 1, cmd_options.blocksize, input_file) < 0)) {
-            
+        if ((fread(buffer, 1, cmds.blocksize, input_file)) < 0) {            
             fprintf(stderr, "fread failed..");
             exit(1);
         }            
-        if (i % 1000000 == 0)
-            printf("\nBlock %'lld", i);
+        
+        if(cmds.verbose){
+            if ((i % 1000000) < 300 )
+                printf("\nBlock %'lld", i);
+        }
 
-        for (j = 0; j < cmd_options.blocksize; j+=cmd_options.searchsize) {
-            
-            memcpy(transfer, &buffer[j] , cmd_options.searchsize);
-            regex_i = regexec(&regex, transfer, 0, NULL, 0);
+        for (j = 0; j < cmds.blocksize; j+=cmds.searchsize) {            
+            memcpy(transfer, &buffer[j] , cmds.searchsize);
+            regex_i = regexec(&regex, (const char*)transfer, 0, NULL, 0);
             
             if(!regex_i) {
                 printf("\nMATCH!");
                 fflush(stdout);
-                resize_block_info(&block_info, cmd_options.searchsize, &cmd_options);
-                add_header_info(&block_info, transfer, i, cmd_options.searchsize);
+                resize_block_info(&block_info, cmds.searchsize, &cmds);
+                add_header_info(&block_info, transfer, i, cmds.searchsize);
             }
             if (terminate_early)
                 goto cleanup;
 
         }
-        memset(transfer, 0, cmd_options.searchsize);
-        memset(buffer, 0, cmd_options.blocksize);
+        //memset(transfer, 0, cmds.searchsize);
+        //memset(buffer, 0, cmds.blocksize);
     }
     cleanup:
 
-    print_headers_to_file(&cmd_options, &block_info, &header_file);
+    print_headers_to_file(&cmds, &block_info, &header_file);
             
     fclose(input_file);
     fclose(output_file);
@@ -133,11 +151,12 @@ int main(int argc, char** argv)
 void resize_block_info(Block_info* block, int searchsize, Cmd_Options* cmds) {    
     int count = block->header_count + 1;        
     
-    
-    printf("\nblock_info.headers realloc: %'ld", 8*count);
-    printf("\nblock_info.info realloc: %'ld", count*8);    
-    printf("\nblock_info.info[%d] malloc: %'ld", count-1, searchsize);    
-    fflush(stdout);
+    if (cmds->verbose) {
+        printf("\nblock_info.headers realloc: %'d", 8*count);
+        printf("\nblock_info.info realloc: %'d", count*8);    
+        printf("\nblock_info.info[%d] malloc: %'d", count-1, searchsize);    
+        fflush(stdout);
+    }
     
     block->headers = (long long*)realloc(block->headers, 8*count);                            
     
@@ -151,11 +170,15 @@ void resize_block_info(Block_info* block, int searchsize, Cmd_Options* cmds) {
 
 
 
+
+
 void add_header_info(Block_info* block, byte* transfer_info, 
                      long long block_offset, int searchsize) {        
     memcpy(block->info[block->header_count], transfer_info, searchsize);          
     block->headers[block->header_count++] = block_offset;
 }
+
+
 
 
 
@@ -171,22 +194,22 @@ void init_block_memory(Block_info* block, int searchsize) {
 
 
 
-void open_io_files(FILE** input_file, FILE** output_file, Cmd_Options* cmd_options) {        
+void open_io_files(FILE** input_file, FILE** output_file, Cmd_Options* cmds) {        
                 
-    if (!(*input_file = fopen(cmd_options->input, "r"))) {
+    if (!(*input_file = fopen(cmds->input, "rb"))) {
         fprintf(stderr, "\n>> Input file failed to open");
         exit(1);
     }    
-    printf("\n>> Input file opened: %s", cmd_options->input);        
+    printf("\n>> Input file opened: %s", cmds->input);        
                
     
-    strcat(cmd_options->output_file, cmd_options->output_folder);
-    strcat(cmd_options->output_file, "output.txt");    
-    if (!(*output_file = fopen(cmd_options->output_file, "wb+"))) {
+    strcat(cmds->output_file, cmds->output_folder);
+    strcat(cmds->output_file, "output.txt");    
+    if (!(*output_file = fopen(cmds->output_file, "wb+"))) {
             fprintf(stderr, "\n>> Output file failed to open");
             exit(1);
     }    
-    printf("\n>> Output file opened: %s", cmd_options->output_file);
+    printf("\n>> Output file opened: %s", cmds->output_file);
     fflush(stdout);
     
 }
@@ -195,49 +218,54 @@ void open_io_files(FILE** input_file, FILE** output_file, Cmd_Options* cmd_optio
 
 
 
-void print_headers_to_file(Cmd_Options* cmd_options, Block_info* block, FILE** header_file) {
+void print_headers_to_file(Cmd_Options* cmds, Block_info* block, FILE** header_file) {
     
     char file_str[50];
     byte line[16];
     int i, j, k;    
     
-    strcat(file_str, cmd_options->output_folder);
+    strcat(file_str, cmds->output_folder);
     strcat(file_str, "headers.txt");
     printf("\nHeader File: %s", file_str);    
 
+    
     if (!(*header_file = fopen(file_str, "w+"))) {
         fprintf(stderr, "\n>> Output file failed to open");
         exit(1);
     }    
-    if(cmd_options->verbose) {
-        printf("\n>> Header file opened: %s", file_str);     
-    }        
+    
+    if(cmds->verbose)
+        printf("\n>> Header file opened: %s", file_str);                 
                
     for (i = 0; i < block->header_count-1; ++i) {
-
-        for (j = 0; j < cmd_options->searchsize; j+=16) {                        
-
+        
+        for (j = 0; j < cmds->searchsize; j+=16) {                        
             memcpy(line, (block->info[i])+j, 16);            
             fprintf(*header_file, "\n%lld  ", block->headers[i]);
             
-            for( k = 0; k < 16; ++k) {                
-
+            for( k = 0; k < 16; ++k) {
                 fprintf(*header_file, "%02x ", line[k]);
-            }
-            fprintf(*header_file, "\t|");
+                if (k == 7)
+                    fprintf(*header_file, " ");                
+            }            
+            fprintf(*header_file, " |");
             for( k = 0; k < 16; ++k) {                
-                fprintf(*header_file, "%c", (line[k] > 33 && line[k] < 127) ? line[k] : '.');
-                if (k == 7) {
-                    fprintf(*header_file, " ");
-                }
+                fprintf(*header_file, "%c", 
+                         (line[k] > 33 && line[k] < 127) ? line[k] : '.');                
             }
             fprintf(*header_file, "|");
         }
+        fprintf(*header_file, "\n\n");
     }    
     fclose(*header_file);
 }
 
-void get_cmd_options(Cmd_Options* cmd_options)
+
+
+
+
+
+void get_cmd_options(Cmd_Options* cmds)
 {
     setlocale(LC_NUMERIC, "");
 
@@ -260,46 +288,46 @@ void get_cmd_options(Cmd_Options* cmd_options)
     int cmd_option;
 
 
-    while ((cmd_option = getopt_long(cmd_options->argc, cmd_options->argv,
+    while ((cmd_option = getopt_long(cmds->argc, cmds->argv,
                                      "b:S:E:s:i:o:vh", long_options, NULL)) != -1) {
     
         switch (cmd_option) 
         {
             
         case 'b':
-            cmd_options->blocksize = atoi(optarg);                
+            cmds->blocksize = atoi(optarg);                
             break;
         
         case 'S':
-            cmd_options->offset_start = atoll(optarg);
+            cmds->offset_start = atoll(optarg);
             break;
         
         case 'E':
-            cmd_options->offset_end = atoll(optarg);
+            cmds->offset_end = atoll(optarg);
             break;
 
         case 's':
-            cmd_options->searchsize = atoi(optarg);
+            cmds->searchsize = atoi(optarg);
             break;
         
         case 'i':
-            cmd_options->input = (char*)malloc(sizeof(char)*30);                
-            strcpy(cmd_options->input, optarg);                    
+            cmds->input = (char*)malloc(sizeof(char)*30);                
+            strcpy(cmds->input, optarg);                    
             break;
 
         case 'o':
-            cmd_options->output_folder = (char*)malloc(sizeof(char)*30);                       
-            strcpy(cmd_options->output_folder, optarg);
+            cmds->output_folder = (char*)malloc(sizeof(char)*30);                       
+            strcpy(cmds->output_folder, optarg);
             break;
         
         case 'v':
-            cmd_options->verbose = 1;
+            cmds->verbose = 1;
             break;
 
         case 'h':
             printf("\n\t--blocksize     -b   <size of logical blocks in bytes>");
-            printf("\n\t--offset_start  -os  <offset from start of disk in bytes>");
-            printf("\n\t--offset_end    -oe  <offset from start of disk in bytes>");
+            printf("\n\t--offset_start  -S  <offset from start of disk in bytes>");
+            printf("\n\t--offset_end    -E  <offset from start of disk in bytes>");
             printf("\n\t--searchsize    -s   <size of chunk to search for input disk in bytes>");
             printf("\n\t--input         -i   <file to use for header search>");
             printf("\n\t--output_folder -o   <folder to use for output files>");
@@ -317,44 +345,46 @@ void get_cmd_options(Cmd_Options* cmd_options)
         }
     }
 
-    if(!cmd_options->output_folder) {
+    if(!cmds->output_folder) {
         
-        cmd_options->output_folder = (char*)malloc(sizeof(char)*50);
-        memset(cmd_options->output_folder, 0, 50);  
+        cmds->output_folder = (char*)malloc(sizeof(char)*50);
+        memset(cmds->output_folder, 0, 50);  
         
-        getcwd(cmd_options->output_folder, 50);
-        if(cmd_options->verbose) {
-            strcat(cmd_options->output_folder, "/");
+        if(!(getcwd(cmds->output_folder, 50))){
+            printf("\nCould not retrieve directory with 'getcwd'");
+        }
+        if(cmds->verbose) {
+            strcat(cmds->output_folder, "/");
             printf("\n>> Setting current directory for output: %s", 
-                   cmd_options->output_folder);
+                   cmds->output_folder);
         }
     }
 
-    if(cmd_options->offset_end == 0) {
-        FILE* file_size_stream = fopen(cmd_options->input, "r");
+    if(cmds->offset_end == 0) {
+        FILE* file_size_stream = fopen(cmds->input, "r");
         fseek(file_size_stream, 0, SEEK_END);
-        cmd_options->offset_end = ftell(file_size_stream);
+        cmds->offset_end = ftell(file_size_stream);
         fclose(file_size_stream);        
     }
 
-    long long filesize = cmd_options->offset_end - cmd_options->offset_start;
-    if (filesize < cmd_options->blocksize) 
-        cmd_options->blocksize = filesize;
+    long long filesize = cmds->offset_end - cmds->offset_start;
+    if (filesize < cmds->blocksize) 
+        cmds->blocksize = filesize;
     
-    if(cmd_options->verbose) {
+    if(cmds->verbose) {
                 
-        printf("\n>> Offset Start: %'lld bytes", cmd_options->offset_start);
+        printf("\n>> Offset Start: %'lld bytes", cmds->offset_start);
         printf("\n>> No offset end detected, setting offset to end of file");
-        printf("\n>> Offset End: %'lld bytes", cmd_options->offset_end);
-        printf("\n>> Input file: %s", cmd_options->input);                 
+        printf("\n>> Offset End: %'lld bytes", cmds->offset_end);
+        printf("\n>> Input file: %s", cmds->input);                 
         printf("\n>> Input file size: %'lld bytes", filesize);
-        printf("\n>> Blocksize: %'d bytes", cmd_options->blocksize);        
-        printf("\n>> Search Size: %'d bytes", cmd_options->searchsize);
-        printf("\n>> Output folder: %s", cmd_options->output_folder);
+        printf("\n>> Blocksize: %'d bytes", cmds->blocksize);        
+        printf("\n>> Search Size: %'d bytes", cmds->searchsize);
+        printf("\n>> Output folder: %s", cmds->output_folder);
     }
 
     
-    if (!cmd_options->input) {
+    if (!cmds->input) {
         printf("\n>> Input file required");
         exit(1);
     }
