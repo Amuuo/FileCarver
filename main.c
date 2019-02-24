@@ -4,6 +4,9 @@
 #include <string.h>
 #include <regex.h>
 #include <getopt.h>
+#include <unistd.h>
+#include <stdio.h>
+
 
 
 typedef struct Block_info {
@@ -29,7 +32,7 @@ typedef struct Cmd_Options {
 void resize_block_info(Block_info* block);
 void init_block_memory(Block_info* block);
 void add_header_info(Block_info*, __uint8_t*, long long);    
-void open_io_files(FILE*, FILE*, FILE*);
+void open_io_files(FILE*, FILE*, FILE*, Cmd_Options*);
 void get_cmd_options();
 
 
@@ -43,47 +46,48 @@ int main(int argc, char** argv)
     Block_info block_info;
     Cmd_Options cmd_options = {argc, argv, 0, 32768, 0, 0, 128, "", ""};
 
-    regex_t regex;
-    FILE* input_file;
-    FILE* output_file;
-    FILE* header_file;
-    long int offset = 116267458560;
-    int filesize;        
-    //const char* regex_str = "\\x49\\x49\\x2a\\x00\\x10\\x00\\x00\\x00\\x43\\x52";
-    const char* regex_str = "II......CR";
-    int regex_i;
-    __uint8_t transfer[128];
-        
-
     get_cmd_options(&cmd_options);
-
-
-    regex_i = regcomp(&regex, regex_str, REG_EXTENDED);
+        
+    regex_t      regex;
+    FILE*        input_file;
+    FILE*        output_file;
+    FILE*        header_file;    
+    int          filesize;            
+    int          regex_i;            
+    const char*  regex_str = "II......CR";
+    __uint8_t    transfer[cmd_options.searchsize];
+    long int     offset = 116267458560;
+    long long    i;
+    int          j;
+    
     printf("\n>> Buffer alloc...");
-    __uint8_t* buffer = malloc(32768);
-    memset(buffer, 0, 32768);
+    __uint8_t* buffer = malloc(cmd_options.blocksize);
+    memset(buffer, 0, cmd_options.blocksize);
     printf("\n>> Opening input file");
     fflush(stdout);
         
-    open_io_files(input_file, output_file, header_file);
-    long long i;
-    int j;
-    for (i = cmd_options.offset_start; i < cmd_options.offset_end; i+=32768 ) {
+    open_io_files(input_file, output_file, header_file, &cmd_options);    
+    
+    regex_i = regcomp(&regex, regex_str, REG_EXTENDED);
+    
+    for (i = cmd_options.offset_start; i < cmd_options.offset_end; i+=cmd_options.blocksize ) {
         
         fseek(input_file, offset+i, 0);
         //printf("\n>> Needle moved to %ld", offset+i);
         //fflush(stdout);
 
-        if ((fread(buffer, 1, 32768, input_file) < 0)) {
+        if ((fread(buffer, 1, cmd_options.blocksize, input_file) < 0)) {
             fprintf(stderr, "fread failed..");
             exit(1);
         }    
         
         if (i % 1000000 == 0)
             printf("\nBlock %lld", i);
-          
-        for (j = 0; j < 32768; j+=128){
-            memcpy(transfer, &buffer[j] , 128);
+
+
+
+        for (j = 0; j < cmd_options.blocksize; j+=cmd_options.searchsize){
+            memcpy(transfer, &buffer[j] , cmd_options.searchsize);
             regex_i = regexec(&regex, transfer, 0, NULL, REG_EXTENDED);
             if(!regex_i) {
                 printf("\nMATCH!");
@@ -153,9 +157,10 @@ void add_header_info(Block_info* block, __uint8_t* transfer_info, long long bloc
 
 
 
-void open_io_files(FILE* input_file, FILE* output_file, FILE* header_file)
+void open_io_files(FILE* input_file, FILE* output_file, FILE* header_file, 
+                   Cmd_Options* cmd_options)
 {    
-    if (!(input_file = fopen("/dev/nvme0n1p2", "r"))) {
+    if (!(input_file = fopen(cmd_options->input, "r"))) {
         fprintf(stderr, "\n>> Input file failed to open");
     }
     else {
@@ -163,7 +168,7 @@ void open_io_files(FILE* input_file, FILE* output_file, FILE* header_file)
         fflush(stdout);
     }
     
-    if (!(header_file = fopen("headers.txt", "w+"))) {
+    if (!(header_file = fopen(strcat(cmd_options->output_folder, "headers.txt"), "w+"))) {
             fprintf(stderr, "\n>> Output file failed to open");
             exit(1);
     }
@@ -171,7 +176,7 @@ void open_io_files(FILE* input_file, FILE* output_file, FILE* header_file)
         printf("\n>> Header file opened");
     }
     
-    if (!(output_file = fopen("cr2_test2.cr2", "wb+"))) {
+    if (!(output_file = fopen(strcat(cmd_options->output_folder,"cr2_test2.cr2"), "wb+"))) {
             fprintf(stderr, "\n>> Output file failed to open");
             exit(1);
     }
@@ -200,6 +205,7 @@ void get_cmd_options(Cmd_Options* cmd_options)
     extern char *optarg;
     extern int optind;  
     int cmd_option;
+
 
     while ((cmd_option = getopt_long(cmd_options->argc, cmd_options->argv,
                                      "b:os:oe:s:i:o:vh", long_options, NULL)) != -1) {
@@ -235,17 +241,29 @@ void get_cmd_options(Cmd_Options* cmd_options)
                 break;
 
             case 'h':
-                printf("\n\t--blocksize -b <size of logical blocks in bytes>");
-                printf("\n\t--offset_start -os <offset from start of disk in bytes>");
-                printf("\n\t--offset_end -oe <offset from start of disk in bytes>");
-                printf("\n\t--searchsize -s <size of chunk to search for input disk in bytes>");
-                printf("\n\t--input -i <file to use for header search>");
-                printf("\n\t--output_folder -o <folder to use for output files>");
-                printf("\n\t--verbose -v <display verbose output of ongoing process>");
-                printf("\n\t--help -h <print help options>");
+                printf("\n\t--blocksize     -b   <size of logical blocks in bytes>");
+                printf("\n\t--offset_start  -os  <offset from start of disk in bytes>");
+                printf("\n\t--offset_end    -oe  <offset from start of disk in bytes>");
+                printf("\n\t--searchsize    -s   <size of chunk to search for input disk in bytes>");
+                printf("\n\t--input         -i   <file to use for header search>");
+                printf("\n\t--output_folder -o   <folder to use for output files>");
+                printf("\n\t--verbose       -v   <display verbose output of ongoing process>");
+                printf("\n\t--help          -h   <print help options>\n\n");
+            
+                exit(0);
+                
                 break;
             
+
             default: break;
         }
+    }
+    if(cmd_options->output_folder == "") {
+        getcwd(cmd_options->output_folder, sizeof(cmd_options->output_folder));
+    }
+
+    if (cmd_options->input == "") {
+        printf("\nInput file required");
+        exit(1);
     }
 }
