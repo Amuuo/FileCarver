@@ -17,15 +17,15 @@ typedef struct Block_info {
 
 
 typedef struct Cmd_Options {
-    int argc;
-    char** argv;
-    int verbose;
-    int blocksize;
-    int offset_start;
-    int offset_end;
-    int searchsize;
-    char output_folder[30];
-    char input[30];
+    int        argc;
+    char**     argv;
+    int        verbose;
+    int        blocksize;
+    long long  offset_start;
+    long long  offset_end;
+    int        searchsize;
+    char*      output_folder;
+    char*      input;
 } Cmd_Options;
 
 
@@ -44,8 +44,9 @@ int main(int argc, char** argv)
 {
 
     Block_info block_info;
-    Cmd_Options cmd_options = {argc, argv, 0, 32768, 0, 0, 128, "", ""};
+    Cmd_Options cmd_options = {argc, argv, 0, 32768, 0, 0, 128, NULL, NULL};
 
+    
     get_cmd_options(&cmd_options);
         
     regex_t      regex;
@@ -63,12 +64,12 @@ int main(int argc, char** argv)
     printf("\n>> Buffer alloc...");
     __uint8_t* buffer = malloc(cmd_options.blocksize);
     memset(buffer, 0, cmd_options.blocksize);
-    printf("\n>> Opening input file");
+    printf("\n>> Opening input file %s", cmd_options.input);
     fflush(stdout);
         
     open_io_files(input_file, output_file, header_file, &cmd_options);    
     
-    regex_i = regcomp(&regex, regex_str, REG_EXTENDED);
+    regex_i = regcomp(&regex, regex_str, 0);
     
     for (i = cmd_options.offset_start; i < cmd_options.offset_end; i+=cmd_options.blocksize ) {
         
@@ -88,7 +89,7 @@ int main(int argc, char** argv)
         for (j = 0; j < cmd_options.blocksize; j+=cmd_options.searchsize) {
             
             memcpy(transfer, &buffer[j] , cmd_options.searchsize);
-            regex_i = regexec(&regex, transfer, 0, NULL, REG_EXTENDED);
+            regex_i = regexec(&regex, transfer, 0, NULL, 0);
             
             if(!regex_i) {
                 printf("\nMATCH!");
@@ -165,24 +166,26 @@ void open_io_files(FILE* input_file, FILE* output_file, FILE* header_file,
         fprintf(stderr, "\n>> Input file failed to open");
     }
     else {
-        printf("\n>> Input file opened");
+        printf("\n>> Input file opened: %s", cmd_options->input);
         fflush(stdout);
     }
-    
-    if (!(header_file = fopen(strcat(cmd_options->output_folder, "headers.txt"), "w+"))) {
+    char file_str[50];
+    strcpy(file_str, cmd_options->output_folder);
+    if (!(header_file = fopen(strcat(file_str, "headers.txt"), "w+"))) {
             fprintf(stderr, "\n>> Output file failed to open");
             exit(1);
     }
     else {
-        printf("\n>> Header file opened");
+        printf("\n>> Header file opened %s", file_str);
     }
-    
-    if (!(output_file = fopen(strcat(cmd_options->output_folder,"cr2_test2.cr2"), "wb+"))) {
+    memset(file_str, 0, 50);
+    strcpy(file_str, cmd_options->output_folder);
+    if (!(output_file = fopen(strcat(file_str,"cr2_test2.cr2"), "wb+"))) {
             fprintf(stderr, "\n>> Output file failed to open");
             exit(1);
     }
     else {
-        printf("\n>> Output file opened");
+        printf("\n>> Output file opened: %s", file_str);
     }
     
 }
@@ -193,13 +196,14 @@ void get_cmd_options(Cmd_Options* cmd_options)
     static struct option long_options[] =
     {
         {"blocksize",     required_argument, NULL, 'b'},
-        {"offset_start",  required_argument, NULL, 'os'},
-        {"offset_start",  required_argument, NULL, 'oe'},
+        {"offset_start",  required_argument, NULL, 'S'},
+        {"offset_end",    required_argument, NULL, 'E'},
         {"searchsize",    required_argument, NULL, 's'},
         {"input",         required_argument, NULL, 'i'},
         {"output_folder", required_argument, NULL, 'o'},
         {"searchsize",    required_argument, NULL, 's'},
-        {"verbose",       no_argument,       NULL, 'v'},                
+        {"verbose",       no_argument,       NULL, 'v'}, 
+        {"help",          no_argument,       NULL, 'h'},                
         {NULL, 0, NULL, 0}
     };    
 
@@ -207,34 +211,43 @@ void get_cmd_options(Cmd_Options* cmd_options)
     extern int optind;  
     int cmd_option;
 
-
     while ((cmd_option = getopt_long(cmd_options->argc, cmd_options->argv,
-                                     "b:os:oe:s:i:o:vh", long_options, NULL)) != -1) {
+                                     "b:S:E:s:i:o:vh", long_options, NULL)) != -1) {
     
         switch (cmd_option) {
             
             case 'b':
-                cmd_options->blocksize = optarg;
+                cmd_options->blocksize = atoi(optarg);
+                printf("\n>> Blocksize: %d", cmd_options->blocksize);
                 break;
             
-            case 'os':
-                cmd_options->offset_start = optarg;
+            case 'S':
+                cmd_options->offset_start = atoll(optarg);
+                printf("\n>> Offset Start: %lld", cmd_options->offset_start);
                 break;
             
-            case 'oe':
-                cmd_options->offset_end = optarg;
+            case 'E':
+                cmd_options->offset_end = atoll(optarg);
+                printf("\n>> Offset End: %lld", cmd_options->offset_end);
                 break;
 
             case 's':
                 cmd_options->searchsize = optarg;
+                printf("\n>> Search Size: %s", cmd_options->searchsize);
                 break;
             
             case 'i':
-                *cmd_options->input = optarg;                
+                cmd_options->input = (char*)malloc(sizeof(char)*30);
+                memset(cmd_options->input, 0, 30);                    
+                strcpy(cmd_options->input, optarg);                    
+                printf("\n>> Input file: %s", cmd_options->input); 
                 break;
 
             case 'o':
-                *cmd_options->output_folder = optarg;
+                cmd_options->output_folder = (char*)malloc(sizeof(char)*30);
+                memset(cmd_options->output_folder, 0, 30);                 
+                strcpy(cmd_options->output_folder, optarg);
+                printf("\n>> Output folder: %s", cmd_options->output_folder);
                 break;
             
             case 'v':
@@ -259,27 +272,34 @@ void get_cmd_options(Cmd_Options* cmd_options)
             default: break;
         }
     }
-    if(cmd_options->output_folder == "") {
-        getcwd(cmd_options->output_folder, sizeof(cmd_options->output_folder));
+
+    if(!cmd_options->output_folder) {
+        
+        cmd_options->output_folder = (char*)malloc(sizeof(char)*30);
+        memset(cmd_options->output_folder, 0, 30);  
+        
+        getcwd(cmd_options->output_folder, 30);
         if(cmd_options->verbose) {
-            printf("\nSetting current directory for output: %s", 
+            strcat(cmd_options->output_folder, "/");
+            printf("\n>> Setting current directory for output: %s", 
                    cmd_options->output_folder);
         }
     }
 
-
-    if(cmd_options->offset_end = 0) {
+    if(cmd_options->offset_end == 0) {
         FILE* file_size_stream = fopen(cmd_options->input, "r");
         fseek(file_size_stream, 0, SEEK_END);
         cmd_options->offset_end = ftell(file_size_stream);
-        fclose(file_size_stream);
-        if(cmd_options->verbose){
-            printf("\nInput file size: %lld", cmd_options->offset_end);
-        }
+        fclose(file_size_stream);        
+    }
+    if(cmd_options->verbose){
+        printf("\n>> No offset end detected, setting offset to end of file");
+        printf("\n>> Offset End: %lld", cmd_options->offset_end);
+        printf("\n>> Input file size: %lld", cmd_options->offset_end - cmd_options->offset_start);
     }
 
-    if (cmd_options->input == "") {
-        printf("\nInput file required");
+    if (!cmd_options->input) {
+        printf("\n>> Input file required");
         exit(1);
     }
 }
