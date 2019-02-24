@@ -20,7 +20,9 @@ typedef struct Block_info {
 } Block_info;
 
 pthread_cond_t cond1 = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond2 = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t lock2 = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct Cmd_Options {
     int        argc;
@@ -41,6 +43,7 @@ typedef struct Arg_struct {
     Block_info block;
     byte* thread_buff;
     long long offset;
+    short thread_id;
 } Arg_struct;
 
 
@@ -55,8 +58,8 @@ void *search_disk(void*);
 
 
 int terminate_early;
-
-
+int threads_ready;
+int threads_go;
 
 
 
@@ -73,6 +76,7 @@ int main(int argc, char** argv)
     
     Cmd_Options cmds = {argc, argv, 0, 32768, 0, 0, 128, NULL, NULL, NULL};
     
+    threads_ready = 0;
     get_cmd_options(&cmds);    
     setlocale(LC_NUMERIC, "");
 
@@ -84,87 +88,77 @@ int main(int argc, char** argv)
     //const char*  regex_str = "^II.{6}CR";        
     long long    i;
     int          j;
-    int          thread_blk_sz = cmds.blocksize/8;
+    int          thread_blk_sz = cmds.blocksize/8; 
+    threads_go = 0;
 
-    Block_info thread_block[8];    
-
-    
     byte* buffer = (byte*)malloc(cmds.blocksize);
     byte** thread_buff = (byte**)malloc((thread_blk_sz)*sizeof(byte*));
     for (i = 0; i < 8; ++i) {
         thread_buff[i] = (byte*)malloc(thread_blk_sz);
     }
-    //printf("\nbefore output_file");
-    //fflush(stdout);
     if(cmds.verbose){
         printf("\n>> Buffer alloc... %'d bytes", cmds.blocksize);
     }    
     cmds.output_file = (char*)malloc(50);
-
-    //printf("\nbefore open io");
-    //fflush(stdout); 
     open_io_files(&input_file, &output_file, &cmds);    
         
-           
-    //printf("\nbefore main loop");
-    //fflush(stdout); 
-    for (i = cmds.offset_start; i < cmds.offset_end; i+=cmds.blocksize ) {
+    Arg_struct** args = (Arg_struct**)malloc(sizeof(Arg_struct*)*8);        
+    
+    for(j = 0; j < 8; ++j){
+        args[j] = (Arg_struct*)malloc(sizeof(Arg_struct));
+    }
+    
+    for (j = 0; j < 8; ++j) {        
+        args[j]->block;
+        args[j]->cmd = cmds;
+        args[j]->cmd.blocksize = args[j]->cmd.blocksize/8;                       
+        args[j]->thread_id = j+1;
+        if (cmds.verbose)
+            printf("\nSpawing thread #%d", j+1);
+                    
+        pthread_create(&thread_arr[j], NULL, &search_disk, (void*)args[j]);
+    }           
 
-        //printf("\nbefore fseek");
-        //fflush(stdout);                             
+    for (i = cmds.offset_start; i < cmds.offset_end; i+=cmds.blocksize ) {
+        
+        threads_go = 0;
+        
         fseek(input_file, i, 0);        
         
         if ((fread(buffer, 1, cmds.blocksize, input_file)) < 0) {            
             fprintf(stderr, "fread failed..");
             exit(1);
+        }      
+        printf("\nMain thread waiting for children to be ready");
+        
+        pthread_mutex_lock(&lock2);
+        while(threads_ready != 8) {
+            pthread_cond_wait(&cond2, &lock2);
         }            
+        pthread_mutex_unlock(&lock2);
+        threads_go = 1;
+        printf("\nFrom Main: Waking children threads");
+        pthread_cond_broadcast(&cond1);
+        threads_ready = 0;
+        
+        for (j = 0; j < 8; ++j) {            
+            memcpy(args[j]->thread_buff, buffer+(j*thread_blk_sz), thread_blk_sz);
+            args[j]->offset = i;
+        }
+        
         if ((i % 10000000) == 0)
                 printf("\nBlock %'lld", i);
 
-        Arg_struct** args = (Arg_struct**)malloc(sizeof(Arg_struct*)*8);        
-        for(j = 0; j < 8; ++j){
-            args[j] = (Arg_struct*)malloc(sizeof(Arg_struct)
-            );
-        }
-        for (j = 0; j < 8; ++j) {
-            //printf("\nbefore memcpy 1");
-            //fflush(stdout);
-            memcpy(thread_buff[j], buffer+(j*thread_blk_sz), thread_blk_sz);             
-            
-            //printf("\nbefore args malloc, sizeof(Arg_struct): %d", sizeof(Arg_struct));
-            //fflush(stdout);                        
-            args[j]->block = thread_block[j];
-            
-            //printf("\nbefore cmd memcpy");
-            //fflush(stdout);
-            args[j]->cmd = cmds;
-            
-            //printf("\nbefore threadbuff memmove");
-            //fflush(stdout);
-            args[j]->thread_buff = thread_buff[j];
-            
-            //printf("\nbefore blocksize change");
-            //fflush(stdout);
-            args[j]->cmd.blocksize = args[j]->cmd.blocksize/8;            
-            
-            //printf("\nbefore offset assignment");
-            //fflush(stdout);
-            args[j]->offset = i;        
-            
-            if (cmds.verbose){
-                printf("\nSpawing thread #%d", j);
-            }
-            //printf("\nbefore thread spawn");
-            //fflush(stdout);
-            pthread_create(&thread_arr[j], NULL, &search_disk, (void*)args[j]);
-        }
+        /*
         for (j = 0; j < 8; ++j){
             pthread_join(thread_arr[j], NULL);
         }
+
         for(j = 0; j < 8; ++j){
             free(args[j]);
         }
         free(args);
+        */
         
         if(cmds.verbose){
             if ((i % 10000000) == 0)
@@ -454,17 +448,32 @@ void *search_disk(void* arguments) {
         printf("\n>> Transfer alloc... %'d bytes", args->cmd.searchsize);
     }
     int j;
-    for (j = 0; j < args->cmd.blocksize; j+=args->cmd.searchsize) {  
-        //printf("\nBefore thread loop memcpy");
-        memcpy(transfer, args->thread_buff+j, args->cmd.searchsize);
-        //printf("\nBefore thread regex");
-        regex_i = regexec(&regex, (const char*)transfer, 0, NULL, 0);
+    
+    while (1) {
+                
         
-        //printf("\nBefore thread realloc");
-        if(!regex_i) {
-            printf("\nMATCH!");            
-            resize_block_info(&args->block, args->cmd.searchsize, &args->cmd);
-            add_header_info(&args->block, transfer, args->offset, args->cmd.searchsize);
-        }        
-    }        
+        printf("\nFrom thread %d, Threads ready: %d", args->thread_id, threads_ready+1);        
+        if(++threads_ready == 8) {
+            pthread_cond_signal(&cond2);
+        }
+        pthread_mutex_lock(&lock);
+        while(threads_go == 0){
+            pthread_cond_wait(&cond1, &lock);
+        }
+        pthread_mutex_unlock(&lock);  
+
+        for (j = 0; j < args->cmd.blocksize; j+=args->cmd.searchsize) {  
+            //printf("\nBefore thread loop memcpy");
+            memcpy(transfer, args->thread_buff+j, args->cmd.searchsize);
+            //printf("\nBefore thread regex");
+            regex_i = regexec(&regex, (const char*)transfer, 0, NULL, 0);
+            
+            //printf("\nBefore thread realloc");
+            if(!regex_i) {
+                printf("\nMATCH!");            
+                resize_block_info(&args->block, args->cmd.searchsize, &args->cmd);
+                add_header_info(&args->block, transfer, args->offset, args->cmd.searchsize);
+            }        
+        }              
+    }
 }
