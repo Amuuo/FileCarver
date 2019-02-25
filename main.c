@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <pthread.h>
 
+
 typedef __uint8_t byte;
 
 
@@ -64,7 +65,7 @@ void *search_disk(void*);
 int terminate_early;
 int threads_ready;
 int threads_go;
-
+int* input_blocks;
 
 
 
@@ -113,10 +114,10 @@ int main(int argc, char** argv)
     }
     
     for (j = 0; j < 8; ++j) {  
-        args[j]->thread_buff = (byte*)malloc(cmds.blocksize);     
         args[j]->block;
-        args[j]->cmd = cmds;
+        memcpy(&args[j]->cmd, &cmds, sizeof(cmds));
         args[j]->cmd.blocksize = args[j]->cmd.blocksize/8;                       
+        args[j]->thread_buff = (byte*)malloc(cmds.blocksize);     
         args[j]->thread_id = j+1;
         args[j]->offset = 1;
         args[j]->ready = 0;
@@ -124,6 +125,7 @@ int main(int argc, char** argv)
             printf("\nSpawing thread #%d", j+1);
                     
         pthread_create(&thread_arr[j], NULL, &search_disk, (void*)&args[j]);
+        pthread_detach(thread_arr[j]);
     }           
 
     for (i = cmds.offset_start; i < cmds.offset_end; i+=cmds.blocksize ) {
@@ -140,17 +142,19 @@ int main(int argc, char** argv)
         
         pthread_mutex_lock(&lock2);
         while((threads_ready % 8 == 0) && (threads_ready != 0)) {
+            printf("\nWaiting for children threads");
+            pthread_cond_broadcast(&cond1);  
             pthread_cond_wait(&cond2, &lock2);
         }            
         pthread_mutex_unlock(&lock2);          
         printf("\nMAIN THREAD AWAKE!");
         for (j = 0; j < 8; ++j) {            
-            memcpy(args[j]->thread_buff, buffer+(j*thread_blk_sz), thread_blk_sz);
+            memcpy(&args[j]->thread_buff, buffer+(j*thread_blk_sz), thread_blk_sz);
             args[j]->offset = i;
             args[j]->ready = 1;
         }
         printf("\nFrom Main: Waking children threads");
-        pthread_cond_broadcast(&cond1);                
+                      
         if ((i % 10000000) == 0)
                 printf("\nBlock %'lld", i);
     
@@ -163,9 +167,7 @@ int main(int argc, char** argv)
             if ((i % 10000000) == 0) printf("\nBlock %'lld", i);
         }
     }
-    for (j = 0; j < 8; ++j){
-        pthread_join(thread_arr[j], NULL);
-    }
+
     //print_headers_to_file(&cmds, &block_info, &header_file);
             
     fclose(input_file);
@@ -441,36 +443,40 @@ void *search_disk(void* arguments) {
     if (args->cmd.verbose) {
         printf("\n>> Transfer alloc... %'d bytes", args->cmd.searchsize);
     }
+    fprintf(stdout, "\nFrom thread %d, Threads ready: %d", args->thread_id, threads_ready); 
+    fprintf(stdout, "\nThread %d signaling Main thread", args->thread_id);
+    fprintf(stdout, "\nThread %d offset: %d", args->thread_id, args->offset);
+    fflush(stdout);
+    /*sleep(1);
+    threads_ready++;
+    if(threads_ready % 8 == 0) {
+        pthread_cond_signal(&cond2);                                
+    }                         
+    pthread_mutex_unlock(&lock);  
+    pthread_mutex_lock(&lock);  
+    */
+    pthread_mutex_lock(&lock);
+    while(!input_blocks) {
+        printf("\nThread #%d waiting, offset: %d", args->thread_id, args->offset);
+        pthread_cond_wait(&cond1, &lock);
+    }
+    pthread_mutex_unlock(&lock);          
+    printf("\nThread #%d AWAKE", args->thread_id);
+    args->ready = 0;
     
+     
     for(;;){
 
-        threads_ready++;
-        
-        if(threads_ready % 8 == 0) {
-            fprintf(stdout, "\nFrom thread %d, Threads ready: %d", args->thread_id, threads_ready); 
-            fprintf(stdout, "\nThread %d signaling Main thread", args->thread_id);
-            fprintf(stdout, "\nThread %d offset: %d", args->thread_id, args->offset);
-            fflush(stdout);
-            pthread_cond_signal(&cond2);                        
-        }                           
-        pthread_mutex_lock(&lock);
-        while(!args->ready) {
-            printf("\nThread #%d waiting, offset: %d", args->thread_id, args->offset);
-            pthread_cond_wait(&cond1, &lock);
-        }
-        pthread_mutex_unlock(&lock);          
-        printf("\nThread #%d AWAKE", args->thread_id);
-        
         for (j = 0; j < args->cmd.blocksize; j+=args->cmd.searchsize) {  
             memcpy(transfer, args->thread_buff+j, args->cmd.searchsize);
             regex_i = regexec(&regex, (const char*)transfer, 0, NULL, 0);
-            
+            printf("\n>> Thread #%d searching for match", args->thread_id);
             if(!regex_i) {
                 printf("\nMATCH!");            
+                printf("\n>> Thread #%d adding headers to table", args->thread_id);
                 resize_block_info(&args->block, args->cmd.searchsize, &args->cmd);
                 add_header_info(&args->block, transfer, args->offset, args->cmd.searchsize);
             }        
         }  
-        args->ready = 0;
     }
 }
