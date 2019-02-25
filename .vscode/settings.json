@@ -1,5 +1,10 @@
 {
     "files.associations": {
         "stdio.h": "c"
-    }
+    },
+    "python.autoComplete.extraPaths": [
+        "${env:SPARK_HOME}/python",
+        "${env:SPARK_HOME}/python/pyspark"
+    ],
+    "C_Cpp.errorSquiggles": "Disabled"
 }
