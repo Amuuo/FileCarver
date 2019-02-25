@@ -17,6 +17,7 @@
 #include <thread>
 #include <map>
 #include <string>
+#include <deque>
 
 typedef __uint8_t byte;
 using namespace std;
@@ -75,7 +76,7 @@ int threads_ready;
 int threads_go;
 int* input_blocks;
 
-queue<byte*> block_queue;
+deque<byte*> block_queue;
 
 
 
@@ -143,14 +144,14 @@ int main(int argc, char** argv)
         byte tmp[thread_blk_sz];                
         memcpy(tmp, buffer + (j*thread_blk_sz), thread_blk_sz);        
         unique_lock<mutex> lck(mtx);        
-        block_queue.push(tmp);        
+        block_queue.push_back(tmp);        
         
         if(cmds.verbose){
             cout << "\n>> Pushed block to queue..." << endl;    
         }
         lck.unlock();
         cv.notify_one();
-        cout << i << ", Queue Size: " << block_queue.size() << endl;
+        //cout << i << ", Queue Size: " << block_queue.size() << endl;
     }
         /*
         printf("\nMain thread waiting for children to be ready");
@@ -373,7 +374,7 @@ void search_disk(Arg_struct* args) {
         cv.wait(lck, []{ return !block_queue.empty(); });
         unique_lock<mutex> queue_lck(mtx);        
         memcpy(tmp, block_queue.front(), args->cmd.blocksize);
-        block_queue.pop();        
+        block_queue.pop_front();        
         queue_lck.unlock();
 
         for (j = 0; j < args->cmd.blocksize; j+=args->cmd.searchsize) {  
@@ -385,7 +386,7 @@ void search_disk(Arg_struct* args) {
                     << "searching for match" << endl;
             }
 
-            //cout << hex << transfer << endl;
+            cout << hex << transfer << endl;
             if(!regex_i) {
                 printf("\nMATCH!");            
                 printf("\n>> Thread #%d adding headers to table", args->thread_id);                
@@ -393,4 +394,5 @@ void search_disk(Arg_struct* args) {
             }        
         }  
     }
+    
 }
