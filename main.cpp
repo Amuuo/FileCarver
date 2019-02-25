@@ -9,10 +9,16 @@
 #include <locale.h>
 #include <signal.h>
 #include <pthread.h>
+#include <queue>
+#include <iostream>
+#include <vector>
+#include <atomic>
+#include <condition_variable>
+#include <thread>
 
 
 typedef __uint8_t byte;
-
+using namespace std;
 
 typedef struct Cmd_Options {
     int        argc;
@@ -51,6 +57,9 @@ pthread_cond_t cond2 = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t lock2 = PTHREAD_MUTEX_INITIALIZER;
 
+mutex mtx;
+condition_variable cv;
+atomic<bool> queueIsEmpty{true};
 
 void resize_block_info(Block_info*, int, Cmd_Options*);
 void init_block_memory(Block_info*, int);
@@ -59,7 +68,7 @@ void open_io_files(FILE**, FILE**, Cmd_Options*);
 void get_cmd_options(Cmd_Options*);
 void print_headers_to_file(Cmd_Options*, Block_info*, FILE**);
 void sig_handler(int signal_number);
-void *search_disk(void*);
+void search_disk(Arg_struct*);
 
 
 int terminate_early;
@@ -67,6 +76,7 @@ int threads_ready;
 int threads_go;
 int* input_blocks;
 
+std::queue<byte*> block_queue;
 
 
 
@@ -85,7 +95,7 @@ int main(int argc, char** argv)
     get_cmd_options(&cmds);    
     setlocale(LC_NUMERIC, "");
 
-    pthread_t    thread_arr[8];
+    std::thread  thread_arr[8];
     FILE*        input_file;
     FILE*        output_file;
     FILE*        header_file;                      
@@ -97,10 +107,12 @@ int main(int argc, char** argv)
     threads_go = 0;
 
     byte* buffer = (byte*)malloc(cmds.blocksize);
+    /*
     byte** thread_buff = (byte**)malloc((thread_blk_sz)*sizeof(byte*));
     for (i = 0; i < 8; ++i) {
         thread_buff[i] = (byte*)malloc(thread_blk_sz);
     }
+    */
     if(cmds.verbose){
         printf("\n>> Buffer alloc... %'d bytes", cmds.blocksize);
     }    
@@ -115,17 +127,21 @@ int main(int argc, char** argv)
     
     for (j = 0; j < 8; ++j) {  
         args[j]->block;
-        memcpy(&args[j]->cmd, &cmds, sizeof(cmds));
+        args[j]->cmd = cmds;
         args[j]->cmd.blocksize = args[j]->cmd.blocksize/8;                       
         args[j]->thread_buff = (byte*)malloc(cmds.blocksize);     
         args[j]->thread_id = j+1;
         args[j]->offset = 1;
         args[j]->ready = 0;
+        
         if (cmds.verbose)
             printf("\nSpawing thread #%d", j+1);
-                    
-        pthread_create(&thread_arr[j], NULL, &search_disk, (void*)&args[j]);
-        pthread_detach(thread_arr[j]);
+
+        cout << "\nbefore first thread" << endl;
+        thread tmp(search_disk, args[j]);            
+        tmp.detach();
+        //pthread_create(&thread_arr[j], NULL, &search_disk, (void*)&args[j]);
+        //pthread_detach(thread_arr[j]);
     }           
 
     for (i = cmds.offset_start; i < cmds.offset_end; i+=cmds.blocksize ) {
@@ -138,8 +154,22 @@ int main(int argc, char** argv)
             fprintf(stderr, "fread failed..");
             exit(1);
         }      
-        printf("\nMain thread waiting for children to be ready");
         
+        for(j = 0; j < 8; ++j){
+            
+            byte* temp_buff = new byte[thread_blk_sz];
+            memcpy(temp_buff, buffer + (j*thread_blk_sz), thread_blk_sz);
+            unique_lock<mutex> lck(mtx);
+            //pthread_mutex_lock(&lock);
+            block_queue.push(temp_buff);
+            //pthread_mutex_unlock(&lock);
+            lck.unlock();
+            cv.notify_one();
+            //pthread_cond_signal(&cond1);
+        }
+    }
+        /*
+        printf("\nMain thread waiting for children to be ready");
         pthread_mutex_lock(&lock2);
         while((threads_ready % 8 == 0) && (threads_ready != 0)) {
             printf("\nWaiting for children threads");
@@ -149,7 +179,8 @@ int main(int argc, char** argv)
         pthread_mutex_unlock(&lock2);          
         printf("\nMAIN THREAD AWAKE!");
         for (j = 0; j < 8; ++j) {            
-            memcpy(&args[j]->thread_buff, buffer+(j*thread_blk_sz), thread_blk_sz);
+            memcpy(&args[j]->thread_buff, buffer+(j*thread_blk_sz), 
+                   thread_blk_sz);
             args[j]->offset = i;
             args[j]->ready = 1;
         }
@@ -166,7 +197,8 @@ int main(int argc, char** argv)
         if(cmds.verbose){
             if ((i % 10000000) == 0) printf("\nBlock %'lld", i);
         }
-    }
+    
+    */
 
     //print_headers_to_file(&cmds, &block_info, &header_file);
             
@@ -250,7 +282,8 @@ void open_io_files(FILE** input_file, FILE** output_file, Cmd_Options* cmds) {
 
 
 
-void print_headers_to_file(Cmd_Options* cmds, Block_info* block, FILE** header_file) {
+void print_headers_to_file(Cmd_Options* cmds, Block_info* block, 
+                           FILE** header_file) {
     
     char file_str[50];
     byte line[16];
@@ -428,12 +461,12 @@ void sig_handler(int signal_number) {
 
 }
 
-void *search_disk(void* arguments) {
+void search_disk(Arg_struct* args) {
 
     int j;
     regex_t  regex;
-    //pthread_detach(pthread_self());
-    Arg_struct* args = *((Arg_struct**)arguments);
+    //pthread_detach(pthread_self());    
+    //Arg_struct* args = *((Arg_struct**)arguments);
     //printf("\nthread buffer size: %d", args.cmd.blocksize);
     init_block_memory(&args->block, args->cmd.searchsize);
     byte transfer[args->cmd.searchsize];
@@ -455,14 +488,22 @@ void *search_disk(void* arguments) {
     pthread_mutex_unlock(&lock);  
     pthread_mutex_lock(&lock);  
     */
-    pthread_mutex_lock(&lock);
+    unique_lock<mutex> lck(mtx);
+    //pthread_mutex_lock(&lock);    
+    //printf("\nThread #%d SLEEPING", args->thread_id);
+    cv.wait(lck, []{ return !queueIsEmpty; });
+    //pthread_cond_wait(&cond1, &lock);
+    //printf("\nThread #%d AWAKE", args->thread_id);    
+    args->thread_buff = block_queue.front();
+    block_queue.pop();    
+    pthread_mutex_unlock(&lock);  
+    
+    /*
     while(!input_blocks) {
         printf("\nThread #%d waiting, offset: %d", args->thread_id, args->offset);
         pthread_cond_wait(&cond1, &lock);
     }
-    pthread_mutex_unlock(&lock);          
-    printf("\nThread #%d AWAKE", args->thread_id);
-    args->ready = 0;
+    */              
     
      
     for(;;){
