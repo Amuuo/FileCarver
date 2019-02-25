@@ -6,5 +6,6 @@
         "${env:SPARK_HOME}/python",
         "${env:SPARK_HOME}/python/pyspark"
     ],
-    "C_Cpp.errorSquiggles": "Disabled"
+    "C_Cpp.errorSquiggles": "Disabled",
+    "C_Cpp.intelliSenseEngineFallback": "Disabled"
 }
