@@ -16,14 +16,18 @@
 #include <condition_variable>
 #include <thread>
 #include <map>
+#include <mutex>
 #include <string>
-#include <deque>
+#include <queue>
+#include <fstream>
+#include <sstream>
+#include <stdint.h>
 
-typedef __uint8_t byte;
+
 using namespace std;
 
 struct Cmd_Options {
-    Cmd_Options(int _argc, char** _argv, int v, int b, long long os, long long oe, int s) :
+    Cmd_Options(int _argc, char** _argv, bool v, int b, long long os, long long oe, int s) :
         argc{_argc}, argv{_argv}, verbose{v}, blocksize{b}, offset_start{os},
         offset_end{oe}, searchsize{s} {}
     int        argc;
@@ -33,23 +37,11 @@ struct Cmd_Options {
     long long  offset_start;
     long long  offset_end;
     int        searchsize;
-    string      output_folder{""};
-    string      input{""};
-    string      output_file{""};
+    string     output_folder{""};
+    string     input{""};
+    string     output_file{""};
 
-    void print_all_options(){
-        cout << endl;
-        cout << "argc: " << argc << endl;
-        cout << "argv: " << argv << endl;
-        cout << "verbose: " << verbose << endl;
-        cout << "blocksize: " << blocksize << endl;
-        cout << "offset_start: " << offset_start << endl;
-        cout << "offset_end: " << offset_end << endl;
-        cout << "searchsize: " << searchsize << endl;
-        cout << "output_folder: " << output_folder << endl;
-        cout << "input: " << input << endl;
-        cout << "output_file: " << output_file << endl;
-    }
+    void print_all_options();
 };
 
 
@@ -62,7 +54,7 @@ struct Block_info {
 struct Arg_struct {
     Cmd_Options cmd;
     Block_info block{};
-    byte* thread_buff{};
+    char* thread_buff{};
     long long offset{};
     short thread_id{};
     bool ready{};
@@ -75,17 +67,19 @@ pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t lock2 = PTHREAD_MUTEX_INITIALIZER;
 */
 
-mutex mtx;
-mutex mtx_wait;
-condition_variable cv;
-atomic<bool> queueIsEmpty{true};
+mutex queue_lck;
+mutex queue_wait_lck;
+mutex print_lock;
+condition_variable queue_is_empty;
+atomic<bool> readingIsDone{false};
 
-void add_header_info(Block_info*, byte*, long long, int);    
-void open_io_files(FILE**, FILE**, Cmd_Options*);
+
+void add_header_info(Block_info*, char*, long long, int);    
+void open_io_files(ifstream*, ofstream*, Cmd_Options*);
 void get_cmd_options(Cmd_Options*);
-void print_headers_to_file(Cmd_Options*, Block_info*, FILE**);
+void print_headers_to_file(Cmd_Options*, Block_info*, ofstream*);
 void sig_handler(int signal_number);
-void search_disk(Arg_struct*);
+void search_disk(int, int, int, bool);
 
 
 int terminate_early;
@@ -93,7 +87,7 @@ int threads_ready;
 int threads_go;
 int* input_blocks;
 int match_count{0};
-deque<__uint8_t*> block_queue;
+queue<char*> block_queue{};
 
 
 
@@ -123,16 +117,17 @@ int main(int argc, char** argv)
     setlocale(LC_NUMERIC, "");
 
     std::thread  thread_arr[8];
-    FILE*        input_file;
-    FILE*        output_file;
-    FILE*        header_file;                                             
+    ifstream     input_file;
+    ofstream     output_file;
+    ofstream     header_file;                                             
     int          thread_blk_sz = cmds.blocksize/8; 
-    __uint8_t tmp[thread_blk_sz];
     
-    __uint8_t buffer[cmds.blocksize];
     
+    //char* buffer = new char[cmds.blocksize];
+    char buffer[cmds.blocksize];
+
     if(cmds.verbose)
-        printf("\n>> Buffer alloc... %'d bytes", cmds.blocksize);        
+        printf("\n>> Buffer alloc... %'lld bytes", cmds.blocksize);        
     
     open_io_files(&input_file, &output_file, &cmds);            
     
@@ -141,44 +136,29 @@ int main(int argc, char** argv)
     for(int j = 0; j < 8; ++j)
         args[j] = (Arg_struct*)malloc(sizeof(Arg_struct));    
     
-    for (int j = 0; j < 8; ++j) {  
-        args[j]->block;
-        args[j]->cmd = cmds;
-        args[j]->cmd.blocksize = cmds.blocksize/8;                                
-        args[j]->thread_id = j+1;
-        args[j]->offset = 1;
-        args[j]->ready = 0;        
-        
-
+    for (int j = 0; j < 8; ++j) {                  
         if (cmds.verbose)
             printf("\nSpawing thread #%d", j+1);
 
-        thread tmp(&search_disk, args[j]);            
-        tmp.detach();
-    }           
-
-
+        thread_arr[j] = thread{&search_disk, j+1, cmds.blocksize/8, cmds.searchsize, cmds.verbose};                            
+    }                   
 
     for (long long i = cmds.offset_start; i < cmds.offset_end; i+=cmds.blocksize ) {
         
-                
-        fseek(input_file, i, 0);        
-        
-        if ((fread(buffer, 1, cmds.blocksize, input_file)) < 0) {            
-            fprintf(stderr, "fread failed..");
-            exit(1);
-        }              
-        
-        for(int j = 0; j < 8; ++j){
-            memcpy(tmp, buffer + (j*thread_blk_sz), thread_blk_sz);        
-            unique_lock<mutex> lck(mtx);                
-            block_queue.push_back(tmp);                            
-            if(cmds.verbose){
-                cout << "\n>> Pushed block to queue..." << endl;    
+        input_file.seekg(i);        
+        input_file.read(buffer, cmds.blocksize);
+        for(int j = 0; j < cmds.blocksize ; j += cmds.blocksize/8){            
+            char* tmp = new char[cmds.blocksize/8];                    
+            memcpy(tmp, buffer + j, thread_blk_sz);                                                
+            {
+                unique_lock<mutex> queue_lock(queue_lck);
+                block_queue.push(tmp);                
             }
-            lck.unlock();
-            cv.notify_one();
-            cout << i << ", Queue Size: " << block_queue.size() << endl;
+            queue_is_empty.notify_one();
+        }                                
+        {
+            unique_lock<mutex> queue_lock(queue_lck);
+            cout << ">> BLOCKSIZE: " << dec << i << ", QUEUE_SIZE: " << block_queue.size() << endl;                      
         }
     }
         /*
@@ -212,14 +192,16 @@ int main(int argc, char** argv)
         }
     
     */
+    readingIsDone = true;
 
     //print_headers_to_file(&cmds, &block_info, &header_file);
             
-    fclose(input_file);
-    fclose(output_file);
-    free(buffer);
-    printf("\n\nSUCCESS!\n\n");
+    input_file.close();
+    output_file.close();
 
+    printf("\n\nSUCCESS!\n\n");
+    
+    
     cout << "Match count: " << match_count << endl;
 }
 
@@ -246,10 +228,11 @@ void add_header_info(Block_info* block, char* transfer_info,
 
 
 
-void open_io_files(FILE** input_file, FILE** output_file, Cmd_Options* cmds) {        
+void open_io_files(ifstream* input_file, ofstream* output_file, Cmd_Options* cmds) {        
 
     cout << "\n" << "Trying to open input: " << cmds->input << endl;          
-    if (!(*input_file = fopen(cmds->input.c_str(), "rb"))) {
+    input_file->open(cmds->input.c_str(), ifstream::binary);
+    if (input_file->fail()) {
         fprintf(stderr, "\n>> Input file failed to open");
         exit(1);
     }    
@@ -258,7 +241,8 @@ void open_io_files(FILE** input_file, FILE** output_file, Cmd_Options* cmds) {
     cmds->output_file += cmds->output_folder;
     cmds->output_file += "output.txt";    
     cout << "\n" << "Trying to open output_file: " << cmds->output_file.c_str() << endl;
-    if (!(*output_file = fopen(cmds->output_file.c_str(), "wb+"))) {
+    output_file->open(cmds->output_file.c_str(), ofstream::binary);
+    if (output_file->fail()) {
             fprintf(stderr, "\n>> Output file failed to open");
             exit(1);
     }    
@@ -285,7 +269,7 @@ void get_cmd_options(Cmd_Options* cmds)
     };    
 
     extern char *optarg;
-    extern int optind;  
+    //extern int optind;  
     int cmd_option;
 
 
@@ -379,7 +363,7 @@ void get_cmd_options(Cmd_Options* cmds)
         printf("\n>> Offset End: %'lld bytes", cmds->offset_end);
         printf("\n>> Input file: %s", cmds->input.c_str());                 
         printf("\n>> Input file size: %'lld bytes", filesize);
-        printf("\n>> Blocksize: %'d bytes", cmds->blocksize);        
+        printf("\n>> Blocksize: %'lld bytes", cmds->blocksize);        
         printf("\n>> Search Size: %'d bytes", cmds->searchsize);
         printf("\n>> Output folder: %s", cmds->output_folder.c_str());
     }
@@ -398,56 +382,101 @@ void sig_handler(int signal_number) {
 
 }
 
-void search_disk(Arg_struct* args) {
 
-    int j;
-    regex_t regex;            
-    __uint8_t transfer[args->cmd.searchsize];   
-    //const char regex_str = "^II.{6}CR";     
-    if (args->cmd.verbose) {
-        printf("\n>> Transfer alloc... %'d bytes", args->cmd.searchsize);
-    }
-        
-    __uint8_t tmp[args->cmd.blocksize];
 
-    for(;;){
-        
-        unique_lock<mutex> lck(mtx_wait);            
-        cv.wait(lck, []{ return !block_queue.empty(); });
-        unique_lock<mutex> queue_lck(mtx);        
-        memcpy(tmp, block_queue.front(), args->cmd.blocksize);
-        block_queue.pop_front(); 
-        cout << "Thread " << args->thread_id << " unlocking queue" << endl;
-        queue_lck.unlock();
 
-        for (j = 0; j < args->cmd.blocksize; j+=args->cmd.searchsize) {  
-            memcpy(transfer, &tmp[j], args->cmd.searchsize);
-            int regex_i = regcomp(&regex, "^II.{6}CR", REG_EXTENDED); 
-            regex_i = regexec(&regex, (const char*)transfer, 0, NULL, 0);
-            
-            if(args->cmd.verbose){
-                cout << "\n>> Thread #" << args->thread_id 
-                    << " searching for match" << endl;
-            }
-            
-            if(args->cmd.verbose) {
-                for(int i = 0; i < args->cmd.searchsize; ++i){
-                    cout << hex << transfer[i];
-                }
-                cout << endl;
-                cout << "Size of transfer: " << sizeof(transfer) << endl;
-            }
-            
-            if(!regex_i) {
-                unique_lock<mutex> lck(mtx_wait);
-                printf("\nMATCH!");            
-                printf("\n>> Thread #%d adding headers to table", args->thread_id);
-                fflush(stdout);
-                match_count++;
-                lck.unlock();
-                //add_header_info(&args->block, transfer, args->offset, args->cmd.searchsize);
-            }        
-        }  
+
+
+
+
+void search_disk(int thread_id, int blocksize, int searchsize, bool verbose) {
+    
+    if (verbose) {
+        lock_guard<mutex> print_lck(print_lock);
+        cout << endl;
+        cout << "Thread ID: " << thread_id << endl;
+        cout << "Blocksize: " << blocksize << endl;
+        cout << "Searchsize: " << searchsize << endl;
+        cout << "Verbose: " << boolalpha << verbose << endl;
+        cout << endl;        
     }
     
+    regex_t regex;             
+    char* tmp;
+    char transfer[searchsize];
+    if (verbose) {
+        printf("\n>> Transfer alloc... %'d bytes", searchsize);
+    }    
+    int regex_i = regcomp(&regex, "^II.{6}CR", REG_EXTENDED); 
+    
+    
+    for(;;){        
+        if(!readingIsDone) {
+            unique_lock<mutex> lck(queue_wait_lck);        
+            queue_is_empty.wait(lck, []{ return !block_queue.empty(); });        
+        }
+        unique_lock<mutex> queue_lock(queue_lck);
+        tmp = block_queue.front();            
+        //delete [] block_queue.front();
+        block_queue.pop();             
+        queue_lock.unlock();                    
+        
+        for (int j = 0; j < blocksize; j+=searchsize) {              
+            
+            memcpy(transfer, tmp + j, searchsize);
+            
+            if(verbose){
+                cout << "Thread #" << thread_id << ", j = " << j << endl;
+                cout << "\n>> Thread #" << thread_id 
+                    << " searching for match" << endl;
+            }
+            ostringstream oss{};
+            
+            {
+                unique_lock<mutex> queue_lock(queue_lck);
+                cout << "Thread #" << thread_id << ": ";
+                for(int i = 0; i < searchsize; ++i){
+                    oss << hex << (int)transfer[i];      
+                    cout << dec << oss.str();
+                }                             
+                cout << endl;     
+            }
+            
+            if(verbose) {                                                               
+                cout << "\nSize of transfer: " << dec << sizeof(transfer) << endl;
+            }
+            
+            regex_i = regexec(&regex, oss.str().c_str(), 0, NULL, 0);
+            if(!regex_i) {                
+                cout << "\nMATCH!" << endl;                                                
+                match_count++;                    
+                //add_header_info(&args->block, transfer, args->offset, args->cmd.searchsize);
+            }              
+        }   
+    if (readingIsDone && block_queue.empty()) exit(1);     
+    }    
+}
+
+
+
+
+
+
+
+
+
+
+void Cmd_Options::print_all_options() {    
+    
+    cout << endl;
+    cout << "argc: " << argc << endl;
+    cout << "argv: " << argv << endl;
+    cout << "verbose: " << verbose << endl;
+    cout << "blocksize: " << blocksize << endl;
+    cout << "offset_start: " << offset_start << endl;
+    cout << "offset_end: " << offset_end << endl;
+    cout << "searchsize: " << searchsize << endl;
+    cout << "output_folder: " << output_folder << endl;
+    cout << "input: " << input << endl;
+    cout << "output_file: " << output_file << endl;    
 }
