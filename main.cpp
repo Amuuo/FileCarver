@@ -22,6 +22,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdint.h>
+#include <array>
 
 
 using namespace std;
@@ -54,7 +55,7 @@ struct Block_info {
 struct Arg_struct {
     Cmd_Options cmd;
     Block_info block{};
-    char* thread_buff{};
+    uint8_t* thread_buff{};
     long long offset{};
     short thread_id{};
     bool ready{};
@@ -74,7 +75,7 @@ condition_variable queue_is_empty;
 atomic<bool> readingIsDone{false};
 
 
-void add_header_info(Block_info*, char*, long long, int);    
+void add_header_info(Block_info*, uint8_t*, long long, int);    
 void open_io_files(ifstream*, ofstream*, Cmd_Options*);
 void get_cmd_options(Cmd_Options*);
 void print_headers_to_file(Cmd_Options*, Block_info*, ofstream*);
@@ -87,7 +88,7 @@ int threads_ready;
 int threads_go;
 int* input_blocks;
 int match_count{0};
-queue<char*> block_queue{};
+queue<vector<uint8_t>> block_queue{};
 
 
 
@@ -107,8 +108,7 @@ queue<char*> block_queue{};
            MAIN
  ======================*/
 int main(int argc, char** argv)
-{
-
+{    
     Cmd_Options cmds{argc, argv, false, 32768, 0, 0, 128};
     
     threads_ready = 0;
@@ -123,8 +123,8 @@ int main(int argc, char** argv)
     int          thread_blk_sz = cmds.blocksize/8; 
     
     
-    //char* buffer = new char[cmds.blocksize];
-    char buffer[cmds.blocksize];
+    //uint8_t* buffer = new uint8_t[cmds.blocksize];
+    vector<uint8_t> buffer(cmds.blocksize);
 
     if(cmds.verbose)
         printf("\n>> Buffer alloc... %'lld bytes", cmds.blocksize);        
@@ -146,20 +146,24 @@ int main(int argc, char** argv)
     for (long long i = cmds.offset_start; i < cmds.offset_end; i+=cmds.blocksize ) {
         
         input_file.seekg(i);        
-        input_file.read(buffer, cmds.blocksize);
-        for(int j = 0; j < cmds.blocksize ; j += cmds.blocksize/8){            
-            char* tmp = new char[cmds.blocksize/8];                    
-            memcpy(tmp, buffer + j, thread_blk_sz);                                                
+        input_file.read((char*)&buffer, cmds.blocksize);
+        for(long j = 0; j < cmds.blocksize ; j += thread_blk_sz){            
+            
+            //memcpy(tmp, buffer + j, thread_blk_sz);                                                
             {
-                unique_lock<mutex> queue_lock(queue_lck);
-                block_queue.push(tmp);                
+                queue_lck.lock();
+                block_queue.emplace(buffer.begin()+j, buffer.begin() + (j+thread_blk_sz)); 
+                queue_lck.unlock();               
             }
             queue_is_empty.notify_one();
         }                                
+        /*
         {
-            unique_lock<mutex> queue_lock(queue_lck);
+            queue_lck.lock();
             cout << ">> BLOCKSIZE: " << dec << i << ", QUEUE_SIZE: " << block_queue.size() << endl;                      
+            queue_lck.unlock();
         }
+        */
     }
         /*
         printf("\nMain thread waiting for children to be ready");
@@ -220,7 +224,7 @@ int main(int argc, char** argv)
 
 
 
-void add_header_info(Block_info* block, char* transfer_info, 
+void add_header_info(Block_info* block, uint8_t* transfer_info, 
                      long long block_offset, int searchsize) {    
     block->info[block_offset] = string{(char*)transfer_info};
 }
@@ -231,7 +235,7 @@ void add_header_info(Block_info* block, char* transfer_info,
 void open_io_files(ifstream* input_file, ofstream* output_file, Cmd_Options* cmds) {        
 
     cout << "\n" << "Trying to open input: " << cmds->input << endl;          
-    input_file->open(cmds->input.c_str(), ifstream::binary);
+    input_file->open(cmds->input.c_str(), ios_base::in | ios_base::binary);
     if (input_file->fail()) {
         fprintf(stderr, "\n>> Input file failed to open");
         exit(1);
@@ -241,7 +245,7 @@ void open_io_files(ifstream* input_file, ofstream* output_file, Cmd_Options* cmd
     cmds->output_file += cmds->output_folder;
     cmds->output_file += "output.txt";    
     cout << "\n" << "Trying to open output_file: " << cmds->output_file.c_str() << endl;
-    output_file->open(cmds->output_file.c_str(), ofstream::binary);
+    output_file->open(cmds->output_file.c_str(), ios_base::in | ios_base::binary);
     if (output_file->fail()) {
             fprintf(stderr, "\n>> Output file failed to open");
             exit(1);
@@ -402,28 +406,28 @@ void search_disk(int thread_id, int blocksize, int searchsize, bool verbose) {
     }
     
     regex_t regex;             
-    char* tmp;
-    char transfer[searchsize];
+    vector<uint8_t> tmp(blocksize);
+    uint8_t transfer[searchsize];
     if (verbose) {
         printf("\n>> Transfer alloc... %'d bytes", searchsize);
     }    
     int regex_i = regcomp(&regex, "^II.{6}CR", REG_EXTENDED); 
     
     
-    for(;;){        
-        if(!readingIsDone) {
+    for(;;){                
+        {
             unique_lock<mutex> lck(queue_wait_lck);        
-            queue_is_empty.wait(lck, []{ return !block_queue.empty(); });        
+            queue_is_empty.wait(lck, []{ return !block_queue.empty(); });                
+            queue_lck.lock();
+            tmp = move(block_queue.front());
+            //delete [] block_queue.front();            
+            block_queue.pop();                         
+            queue_lck.unlock();
         }
-        unique_lock<mutex> queue_lock(queue_lck);
-        tmp = block_queue.front();            
-        //delete [] block_queue.front();
-        block_queue.pop();             
-        queue_lock.unlock();                    
         
         for (int j = 0; j < blocksize; j+=searchsize) {              
             
-            memcpy(transfer, tmp + j, searchsize);
+            memcpy(transfer, &tmp[0] + j, searchsize);
             
             if(verbose){
                 cout << "Thread #" << thread_id << ", j = " << j << endl;
@@ -432,13 +436,19 @@ void search_disk(int thread_id, int blocksize, int searchsize, bool verbose) {
             }
             ostringstream oss{};
             
+            if (transfer[0] != '\0')
             {
                 unique_lock<mutex> queue_lock(queue_lck);
                 cout << "Thread #" << thread_id << ": ";
-                for(int i = 0; i < searchsize; ++i){
-                    oss << hex << (int)transfer[i];      
-                    cout << dec << oss.str();
-                }                             
+                for(int i = 0; i < searchsize; ++i){                    
+                    oss << (transfer[i] > 33 && transfer[i] < 127 ? transfer[i] : '.');                          
+                    printf("%02x", (int)transfer[i]);
+                }            
+                printf("  |");
+                for (int i = 0; i < searchsize; ++i){
+                    printf("%c", transfer[i] > 33 && transfer[i] < 127 ? transfer[i] : '.');
+                }
+                printf("|");
                 cout << endl;     
             }
             
@@ -446,14 +456,15 @@ void search_disk(int thread_id, int blocksize, int searchsize, bool verbose) {
                 cout << "\nSize of transfer: " << dec << sizeof(transfer) << endl;
             }
             
-            regex_i = regexec(&regex, oss.str().c_str(), 0, NULL, 0);
+            regex_i = regexec(&regex, (const char*)oss.str().c_str(), 0, NULL, 0);
             if(!regex_i) {                
                 cout << "\nMATCH!" << endl;                                                
                 match_count++;                    
                 //add_header_info(&args->block, transfer, args->offset, args->cmd.searchsize);
             }              
         }   
-    if (readingIsDone && block_queue.empty()) exit(1);     
+        //delete [] tmp;
+    //if (readingIsDone && block_queue.empty()) exit(1);     
     }    
 }
 
