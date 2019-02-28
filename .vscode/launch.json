@@ -8,14 +8,14 @@
             "name": "(gdb) Attach",
             "type": "cppdbg",
             "request": "attach",
-            "program": "enter program name, for example ${workspaceFolder}/a.out",
+            "program": "${workspaceFolder}/a.out",
             "processId": "${command:pickProcess}",
             "MIMode": "gdb",
             "setupCommands": [
-                {
+                {                    
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
+                    "ignoreFailures": true,                    
                 }
             ]
         },
@@ -28,16 +28,18 @@
                 "-i",
                 "/dev/nvme0n1p2",
                 "--offset_start",
-                "156267458560",
+                "106267458560",
                 "--offset_end",
-                "176267458560",
-                "-s",
-                "16"
+                "146267458560",
+                "--searchsize",
+                "16",
+                "--blocksize",
+                "4096"
             ],
-            "stopAtEntry": false,
+            "stopAtEntry": true,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true,
+            "externalConsole": false,
             "MIMode": "gdb",
             "setupCommands": [
                 {
@@ -48,4 +50,4 @@
             ]
         }
     ]
-}cd 
+}

@@ -2,12 +2,23 @@
     "files.associations": {
         "*.c": "c",
         "stdio.h": "c",
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "*.tcc": "cpp"
     },
     "python.autoComplete.extraPaths": [
         "${env:SPARK_HOME}/python",
         "${env:SPARK_HOME}/python/pyspark"
     ],
     "C_Cpp.errorSquiggles": "Disabled",
-    "C_Cpp.intelliSenseEngineFallback": "Disabled"
+    "C_Cpp.clang_format_fallbackStyle": "Google",
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.cStandard": "c11",
+    "C_Cpp.default.intelliSenseMode": "gcc-x64",
+    "C_Cpp.clang_format_style": "Google",
+    "editor.fontWeight": "200",
+    "editor.cursorBlinking": "smooth",
+    "editor.cursorSmoothCaretAnimation": true,
+    "editor.formatOnType": true,
+    "editor.quickSuggestionsDelay": 0,
+    "files.trimTrailingWhitespace": true
 }
