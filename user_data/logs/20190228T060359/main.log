@@ -1,5 +1,0 @@
-[2019-02-28 06:03:59.115] [main] [info] update#setState idle
-[2019-02-28 06:03:59.217] [main] [info] [storage] migrating global storage from localStorage into SQLite
-[2019-02-28 06:03:59.218] [main] [info] [storage] migrated global storage
-[2019-02-28 06:04:29.119] [main] [info] update#setState checking for updates
-[2019-02-28 06:04:29.122] [main] [info] update#setState idle

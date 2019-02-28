@@ -78,7 +78,7 @@ int threads_ready;
 int threads_go;
 int* input_blocks;
 int match_count{0};
-deque<pair<vector<uint8_t>, unsigned long long>> block_queue{};
+deque<pair<uint8_t*, unsigned long long>> block_queue{};
 map<unsigned long long, uint8_t*> block_matches{};
 
 
@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
 
 
   open_io_files(input_file, output_file, cmds);
-  vector<uint8_t> buffer(cmds.blocksize);
+  uint8_t buffer[cmds.blocksize];
 
   // launch search threads
   for (int j = 0; j < 8; ++j) {
@@ -114,43 +114,46 @@ int main(int argc, char** argv) {
   int intput;
   cin >> intput;
   system("clear");
-  // read disk and push data chunks into block_queue
-  for (unsigned long long i = cmds.offset_start; i < cmds.offset_end; i += cmds.blocksize) {
 
-    if(!cmds.verbose && i%100000 < 100)
+
+
+  // read disk and push data chunks into block_queue
+  for (unsigned long long i = cmds.offset_start;
+        i < cmds.offset_end; i += cmds.blocksize) {
+
+    if (!cmds.verbose && i%100000 < 100)
       cout << "[H" << "MAIN:\nBlock: " << i;
 
     input_file.seekg(i);
-    //ifstream test_file{"program_results1551322980"};
-    for(int file_pos = 0; file_pos < cmds.blocksize; ++file_pos){
-      buffer[file_pos] = input_file.get();
-    }
+    input_file.read((char*)buffer, cmds.blocksize);
 
-    //buffer.assign(istream_iterator<uint8_t>(input_file), istream_iterator<uint8_t>());
-    int counter = 0;
-    {
+
+    if (cmds.verbose) {
+      int counter = 0;
       lock_guard<mutex> lock(queue_lck);
-
-      if(cmds.verbose){
-        cout << endl << endl << "MAIN THREAD: " << endl;
-        for(auto& c : buffer){
-          cout << setw(2) << setfill('0') << hex << static_cast<unsigned short>(c);
-          if(counter++ % cmds.searchsize == 0){
-            cout << endl;
-          }
-        }
-        cout << endl << endl;
+      cout << endl << endl << "MAIN THREAD: " << endl;
+      for (int k = 0; k < cmds.blocksize; ++k) {
+        cout << setw(2) << setfill('0') << hex <<
+                static_cast<unsigned short>(buffer[k]);
+        if(counter++ % cmds.searchsize == 0)
+          cout << endl;
       }
-
+      cout << endl << endl;
     }
+
     for (unsigned long long j = 0; j < cmds.blocksize; j += thread_blk_sz) {
       {
-        vector<uint8_t> transfer(buffer.begin() + j, buffer.begin() + (j+thread_blk_sz));
         lock_guard<mutex> q_lock(queue_lck);
-
-        block_queue.push_back(pair<vector<uint8_t>, unsigned long long>{transfer, i+j});
+        uint8_t* transfer = new uint8_t[thread_blk_sz];
+        memcpy(transfer, buffer + j, thread_blk_sz);
+        block_queue.push_back({transfer, i+j});
+        //memcpy(block_queue.back().first, transfer, thread_blk_sz);
+        //block_queue.back().second = i + j;
       }
-			queue_is_empty.notify_one();
+      if (block_queue.size() > 8)
+        queue_is_empty.notify_all();
+      else
+        queue_is_empty.notify_one();
     }
 		if (cmds.verbose && (i % 1000000) < 100 ){
 			lock_guard<mutex> q_lock(queue_lck);
@@ -163,6 +166,10 @@ int main(int argc, char** argv) {
   unique_lock<mutex> lck(main_finished_lock);
   while(!block_queue.empty())
     children_are_running.wait_for(lck, 3000ms, []{return block_queue.empty();});
+
+  for(auto& match : block_matches){
+    output_file << match.first << endl;
+  }
 
   input_file.close();
   output_file.close();
@@ -372,11 +379,11 @@ void search_disk(int thread_id, int blocksize, int searchsize, bool verbose) {
   }
 
   int counter = 0;
-  regex header_regex("49492a00100000004352", regex_constants::ECMAScript);
+  //regex header_regex("49492a00100000004352", regex_constants::ECMAScript);
   vector<uint8_t> pattern{0x49, 0x49, 0x2a, 0x00, 0x10,
                           0x00, 0x00, 0x00, 0x43, 0x52};
-  // uint8_t tmp[blocksize];
-  vector<uint8_t> tmp(blocksize);
+
+  uint8_t* tmp;
   long long block_location;
 
   if (verbose)
@@ -391,9 +398,9 @@ void search_disk(int thread_id, int blocksize, int searchsize, bool verbose) {
             block_queue.size() << ", Block location: " <<block_location << endl;
     }
 
-  	if (readingIsDone && block_queue.empty()) {
+  	if (readingIsDone && block_queue.empty())
 			return;
-		}
+
     else{
       {
         unique_lock<mutex> lck(queue_wait_lck);
@@ -405,14 +412,17 @@ void search_disk(int thread_id, int blocksize, int searchsize, bool verbose) {
         block_queue.pop_front();
       }
       if(verbose) {
+
         cout << endl << endl;
         cout << "Thread #" << thread_id << ": " << endl;
-        for(auto& c : tmp){
-          cout << setw(2) << setfill('0') << hex << static_cast<unsigned short>(c);
-          if(counter++ % searchsize == 0){
-            cout << endl;
+
+        for (int c = 0; c < blocksize; ++c) {
+            cout << setw(2) << setfill('0') << hex
+                 << static_cast<unsigned short>(c);
+
+            if (counter++ % searchsize == 0)
+              cout << endl;
           }
-        }
         cout << endl << endl;
       }
     }
@@ -424,16 +434,16 @@ void search_disk(int thread_id, int blocksize, int searchsize, bool verbose) {
 
         if ((pattern_counter+1) == pattern.size()) {
 
+          lock_guard<mutex> lock(block_match_mtx);
           block_matches[block_location + (i - pattern_counter)] =
               (uint8_t*)malloc(searchsize);
           memcpy(&block_matches[block_location+(i-pattern_counter)],
             &tmp[i], searchsize);
 
           {
-            lock_guard<mutex> lock(block_match_mtx);
             cout << "[H" << endl;
 
-            for (int j = 0; j < block_matches.size(); ++j)
+            for (int j = 0; j < (block_matches.size() % 30) + 1; ++j)
               cout << endl;
 
             cout << block_location + (i - pattern_counter);
@@ -446,33 +456,7 @@ void search_disk(int thread_id, int blocksize, int searchsize, bool verbose) {
       else
         pattern_counter = 0;
     }
-    /*
-    for (long long j = 0; j < blocksize; j += searchsize) {
-      // memcpy(transfer, &tmp[0] + j, searchsize);
-      ostringstream oss{};
-      if (verbose){
-        lock_guard<mutex> lock(queue_lck);
-        cout << "\n>> Thread #" << thread_id << " searching for match" << endl;
-      }
-
-      //unique_lock<mutex> queue_lock(queue_lck);
-      for (int i = 0; i < searchsize; ++i)
-        oss << setw(2) << setfill('0') << hex << unsigned(tmp[j + i]);
-
-      if (regex_search(oss.str(), header_regex)) {
-        lock_guard<mutex> guard(queue_lck);
-
-        block_matches[block_location + j] = oss.str();
-        for (int count = 0; count < match_count+1; ++count)
-          cout << endl;
-
-        cout << "Thread #" << thread_id << " MATCH!" << endl;
-        // cout << oss.str() << endl;
-        match_count++;
-      }
-    }
-    */
-    // delete [] tmp;
+    delete [] tmp;
   }
 }
 
