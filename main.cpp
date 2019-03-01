@@ -29,7 +29,8 @@
 #include <cmath>
 #include <ncurses.h>
 #include <menu.h>
-
+#include <dirent.h>
+#include <cstdio>
 
 
 
@@ -122,7 +123,7 @@ void search_disk     (int, disk_pos, int, bool);
 void print_results   (Cmd_Options&, ofstream&);
 void print_hexdump   (int, vector<uint8_t>&);
 void print_progress  ();
-
+void launch_menu     ();
 
 
 /*=========------------=============
@@ -152,7 +153,7 @@ deque<pair<uint8_t*,disk_pos>> block_queue{};
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 #define CTRLD 5
 char* menu_choices[]{"Continue", "New", "Settings", "More", "About", "Exit"};
-
+struct dirent64** dir_list;
 
 
 
@@ -165,7 +166,7 @@ char* menu_choices[]{"Continue", "New", "Settings", "More", "About", "Exit"};
 int main(int argc, char** argv) {
 
   int intput;
-  cin >> intput;
+  //cin >> intput;
 
   Cmd_Options cmds{get_cmd_options(argc, argv)};
 
@@ -177,7 +178,7 @@ int main(int argc, char** argv) {
   long double progress_multiplier = 100.0f /  (cmds.offset_end-cmds.offset_start);
   disk_pos thread_blk_sz = cmds.blocksize / 8;
 
-  open_io_files(input_file, output_file, cmds);
+  //open_io_files(input_file, output_file, cmds);
   //uint8_t* buffer = new uint8_t[cmds.blocksize];
   uint8_t buffer[cmds.blocksize];
 
@@ -204,12 +205,24 @@ int main(int argc, char** argv) {
   char* msg = "Testing NCURSES BOIII";
 
 
+  ostringstream dir_list_ss;
+  int list_count = 0;
+  int biggest = 0;
+  int n = scandir64("/dev", &dir_list, NULL, alphasort64);
+  cout << "Directory List:\n\t";
 
-
-
-
-
-
+  while(n--) {
+    dir_list_ss << "\t" << dir_list[n]->d_name << "\n";
+    biggest = (strlen(dir_list[n]->d_name) > biggest ?
+                strlen(dir_list[n]->d_name) : biggest);
+    ++list_count;
+  }
+  initscr();
+  getmaxyx(stdscr, row, col);
+  mvprintw(row/2-(list_count/2) > 0 ? (row/2-list_count/2) : 1, (col/2)-(biggest/2), "%s", dir_list_ss.str().c_str());
+  char* usr_msg = "PRESS ANY KEY TO CONTINUE";
+  mvprintw(row-2, (col/2)-strlen(usr_msg)/2, "%s", usr_msg);
+  intput = getch();
 
 
 
@@ -660,6 +673,36 @@ void print_progress(){
   const float    simplify_2 = 100.0f*(offset_start/filesize);
   ostringstream  progress_stream {ios::binary|ios::out};
 
+
+      /*
+      progress_stream << "[" << B_BLACK << setw(progress_bar_length)
+                      << " " << RESET << "]";
+
+      cout << CURSOR_L << progress_stream.str();
+      progress_stream.seekp(1);
+
+      progress_stream << B_GREEN << setw(progress_bar_length) << " " << RESET;
+
+      progress_stream.seekp(progress_bar_length + 4);
+      progress_stream  << RESET  <<  right << setprecision(0) << " ";
+
+      progress_stream.seekp((progress_bar_length/2)+2);
+      progress_stream  << REVERSE
+                       << (short)(percentage >= 100 ? 100 : percentage)
+                       << "%" << RESET;
+
+      cout << CURSOR_L << progress_stream.str();
+    }
+    */
+  }
+}
+
+
+
+
+
+void launch_menu() {
+
   int x, y, c, n_choices;
 
   ITEM** my_items;
@@ -734,25 +777,4 @@ void print_progress(){
       printw("X: %d, Y: %d", x, y);
 
       refresh();
-      /*
-      progress_stream << "[" << B_BLACK << setw(progress_bar_length)
-                      << " " << RESET << "]";
-
-      cout << CURSOR_L << progress_stream.str();
-      progress_stream.seekp(1);
-
-      progress_stream << B_GREEN << setw(progress_bar_length) << " " << RESET;
-
-      progress_stream.seekp(progress_bar_length + 4);
-      progress_stream  << RESET  <<  right << setprecision(0) << " ";
-
-      progress_stream.seekp((progress_bar_length/2)+2);
-      progress_stream  << REVERSE
-                       << (short)(percentage >= 100 ? 100 : percentage)
-                       << "%" << RESET;
-
-      cout << CURSOR_L << progress_stream.str();
-    }
-    */
-  }
 }
