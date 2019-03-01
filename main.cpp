@@ -27,26 +27,34 @@
 #include <functional>
 #include <ctime>
 #include <cmath>
+#include <ncurses.h>
+#include <menu.h>
 
 
-const char* BLUE     = "[34m";
-const char* GREEN    = "[32m";
-const char* RED      = "[31m";
-const char* YELLOW   = "[33m";
-const char* WHITE    = "[37m";
-const char* CYAN     = "[36m";
-const char* MAGENTA  = "[35m";
-const char* BLACK    = "[30m";
-const char* B_CYAN   = "[46m";
-const char* B_BLACK  = "[40m";
-const char* B_BLUE   = "[44m";
-const char* B_RED    = "[41m";
-const char* B_GREEN  = "[42m";
-const char* B_WHITE  = "[47m";
-const char* B_YELLOW = "[43m";
-const char* B_MAGENTA= "[45m";
-const char* BOLD     = "[1m";
-const char* RESET    = "[0m";
+
+
+const char* BLUE      = "[34m";
+const char* GREEN     = "[32m";
+const char* RED       = "[31m";
+const char* YELLOW    = "[33m";
+const char* WHITE     = "[37m";
+const char* CYAN      = "[36m";
+const char* MAGENTA   = "[35m";
+const char* BLACK     = "[30m";
+const char* B_CYAN    = "[46m";
+const char* B_BLACK   = "[40m";
+const char* B_BLUE    = "[44m";
+const char* B_RED     = "[41m";
+const char* B_GREEN   = "[42m";
+const char* B_WHITE   = "[47m";
+const char* B_YELLOW  = "[43m";
+const char* B_MAGENTA = "[45m";
+const char* BOLD      = "[1m";
+const char* RESET     = "[0m";
+const char* REVERSE   = "[7m";
+const char* TOP_LEFT  = "[H";
+const char* CURSOR_S  = "[s";
+const char* CURSOR_L  = "[u";
 
 
 using namespace std;
@@ -116,6 +124,7 @@ void print_hexdump   (int, vector<uint8_t>&);
 void print_progress  ();
 
 
+
 /*=========------------=============
            GLOBAL VARIABLES
  -------------======================*/
@@ -132,11 +141,17 @@ atomic<bool>         readingIsDone{false};
 int                  terminate_early;
 int                  match_count{0};
 disk_pos*            file_pointer_position{nullptr};
-deque<pair<uint8_t*, disk_pos>> block_queue{};
 map<disk_pos, char*> block_matches{};
 disk_pos             offset_start{};
 disk_pos             offset_end{};
+int                  row;
+int                  col;
+deque<pair<uint8_t*,disk_pos>> block_queue{};
 
+
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
+#define CTRLD 5
+char* menu_choices[]{"Continue", "New", "Settings", "More", "About", "Exit"};
 
 
 
@@ -178,6 +193,28 @@ int main(int argc, char** argv) {
   system("clear");
   offset_start = cmds.offset_start;
   offset_end = cmds.offset_end;
+
+
+
+  // ===============================================
+  //        N C U R S E S   T E S T   A R E A
+  // ===============================================
+
+
+  char* msg = "Testing NCURSES BOIII";
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
   // ===============================================
@@ -241,12 +278,10 @@ int main(int argc, char** argv) {
   // ========================================================
   readingIsDone = true;
   unique_lock<mutex> main_lck(main_finished_lock);
-  while(!block_queue.empty())
-    children_are_running.wait_for(main_lck, 3000ms,
 
+  children_are_running.wait_for(main_lck, 3000ms, [] { return block_queue.empty(); });
 
   print_results(cmds, output_file);
-                                  [] { return block_queue.empty(); });
 
   for(auto& match : block_matches){
     output_file << match.first << " || ";
@@ -263,7 +298,7 @@ int main(int argc, char** argv) {
 
   //print results to console
   printf("\n\nSUCCESS!\n\n");
-
+}
   /*
   cout << "Match count: " << block_matches.size() << endl;
 	for (auto& match : block_matches)
@@ -510,7 +545,7 @@ void search_disk(int thread_id, disk_pos blocksize,
           memcpy(preview, &tmp[i-pattern_counter], 16);
           block_matches[block_location + (i - pattern_counter)] = preview;
 
-          cout << "[H" << "\n\n\n\n";
+          cout << TOP_LEFT << "\n\n\n\n";
 
           for (int j = 0; j < (block_matches.size() % 30) + 1; ++j)
             cout << endl;
@@ -618,46 +653,106 @@ void print_hexdump(int line_size, vector<uint8_t>& tmp) {
 void print_progress(){
 
   const disk_pos filesize = offset_end - offset_start;
-  float percentage{0.0f};
-  int progress_bar_length{40};
-  const float ratio = static_cast<float>(progress_bar_length)/100;
-  const float simplify_1 = static_cast<float>(100)/filesize;
-  const float simplify_2 = static_cast<float>(100)*(offset_start/filesize);
-  ostringstream progress_stream{ios::binary | ios::out};
+  float          percentage{0.0f};
+  int            progress_bar_length{40};
+  const float    ratio      = static_cast<float>(progress_bar_length)/100;
+  const float    simplify_1 = 100.0f/filesize;
+  const float    simplify_2 = 100.0f*(offset_start/filesize);
+  ostringstream  progress_stream {ios::binary|ios::out};
 
-  //progress_stream << '[' << B_BLACK << setw(progress_bar_length) << setfill(' ')
-//                  << left << RESET << ']';
+  int x, y, c, n_choices;
 
-  progress_stream << (char)0x1B << (char)0x07 << "[" << B_BLACK;
-  for (int i = 0; i < progress_bar_length; ++i)
-    progress_stream << " ";
+  ITEM** my_items;
+  MENU*  my_menu;
+  ITEM*  current_item;
 
-  progress_stream << RESET << "] " << (char)0x1B << (char)0x08;
-  auto position = progress_stream.tellp();
-  string template_str = progress_stream.str();
+  initscr();
+  cbreak();
+  noecho();
+  keypad(stdscr, TRUE);
+
+  n_choices = ARRAY_SIZE(menu_choices);
+  my_items = (ITEM**)calloc(n_choices+1, sizeof(ITEM*));
+  for(int i = 0; i < n_choices; ++i)
+    my_items[i] = new_item(menu_choices[i], menu_choices[i]);
+
+  my_items[n_choices] = (ITEM*)NULL;
+  my_menu = new_menu((ITEM**)my_items);
+  mvprintw(LINES-2, 0, "F1 to Exit");
+  post_menu(my_menu);
+  refresh();
+
+  while((c = getch()) != KEY_F(1)){
+    switch(c){
+      case KEY_DOWN:
+        menu_driver(my_menu, REQ_DOWN_ITEM);
+        break;
+      case KEY_UP:
+        menu_driver(my_menu, REQ_UP_ITEM);
+        break;
+    }
+  }
+  free_item(my_items[0]);
+  free_item(my_items[1]);
+  free_menu(my_menu);
+  endwin();
+
+  getmaxyx(stdscr, row, col);
+  start_color();
+  init_pair(1, COLOR_RED, COLOR_BLACK);
+  init_pair(2, COLOR_WHITE, COLOR_GREEN);
+  init_pair(3, COLOR_GREEN, COLOR_BLACK);
+  char* title = "F I L E  C A R V E R";
+  WINDOW* win = newwin(row, col, y, x);
+
+  //lock_guard<mutex> q_lck(queue_lck);
   while(percentage < 100){
 
-    this_thread::sleep_for(1s);
+    getyx(win, y, x);
+    ostringstream  curses_test{};
+    this_thread::sleep_for(500ms);
 
-    lock_guard<mutex> lock(print_lock);
     percentage = ((float)(*file_pointer_position-offset_start)/filesize)*100;
 
-    if (percentage > 1) {
-      cout << "[H"  << "MAIN:\nBlock: [32;45m" << *file_pointer_position
-            << " / "  << offset_end
-            << "[0m" << endl;
+    //if (percentage > 1) {
+      lock_guard<mutex> lck(print_lock);
+      mvprintw(row/2 -3, (col-strlen(title))/2, "%s", title);
+      mvchgat(row/2 -3, (col-strlen(title))/2-1, strlen(title) + 2,
+              A_STANDOUT, 1, NULL);
 
-      //progress_stream << template_str;
-      cout << B_BLACK << string(progress_bar_length, ' ') << RESET << "\r";
+      curses_test << *file_pointer_position<< " / "  << offset_end;
+
+      mvprintw(row/2 - 1, (col-strlen(curses_test.str().c_str()))/2,
+               "%s", curses_test.str().c_str());
+
+      mvchgat(row/2 - 1, (col-strlen(curses_test.str().c_str()))/2-1,
+      curses_test.str().size()+2, A_STANDOUT, 3, NULL);
+
+
+      mvprintw(row/2 + 3, (col-2)/2, "%d\%", percentage);
+      mvchgat(row/2 + 3, (col-2)/2-1, 6, A_STANDOUT, 3, NULL);
+      printw("X: %d, Y: %d", x, y);
+
+      refresh();
+      /*
+      progress_stream << "[" << B_BLACK << setw(progress_bar_length)
+                      << " " << RESET << "]";
+
+      cout << CURSOR_L << progress_stream.str();
       progress_stream.seekp(1);
-      progress_stream << B_GREEN;
-      for (int i = 0; i < percentage*ratio; ++i)
-        progress_stream << " ";
 
-      progress_stream << RESET;
+      progress_stream << B_GREEN << setw(progress_bar_length) << " " << RESET;
+
       progress_stream.seekp(progress_bar_length + 4);
-      progress_stream  << RESET << setfill('0') << setw(2) << right << setprecision(2) << " " << percentage << "%";
-      cout << endl << progress_stream.str() << endl;
+      progress_stream  << RESET  <<  right << setprecision(0) << " ";
+
+      progress_stream.seekp((progress_bar_length/2)+2);
+      progress_stream  << REVERSE
+                       << (short)(percentage >= 100 ? 100 : percentage)
+                       << "%" << RESET;
+
+      cout << CURSOR_L << progress_stream.str();
     }
+    */
   }
 }
