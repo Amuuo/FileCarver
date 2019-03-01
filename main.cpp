@@ -111,7 +111,7 @@ Cmd_Options get_cmd_options (int, char**);
 void open_io_files   (ifstream&, ofstream&, Cmd_Options&);
 void sig_handler     (int signal_number);
 void search_disk     (int, disk_pos, int, bool);
-void print_results   (Cmd_Options&);
+void print_results   (Cmd_Options&, ofstream&);
 void print_hexdump   (int, vector<uint8_t>&);
 void print_progress  ();
 
@@ -243,6 +243,9 @@ int main(int argc, char** argv) {
   unique_lock<mutex> main_lck(main_finished_lock);
   while(!block_queue.empty())
     children_are_running.wait_for(main_lck, 3000ms,
+
+
+  print_results(cmds, output_file);
                                   [] { return block_queue.empty(); });
 
   for(auto& match : block_matches){
@@ -267,7 +270,7 @@ int main(int argc, char** argv) {
 		cout << match.first << ": " << match.second << endl;
 
   print_results(cmds);
-  */
+
 }
 /*
   ==============================
@@ -563,20 +566,21 @@ void Cmd_Options::print_all_options() {
 /*=========------------=============
            	PRINT RESULTS
  -------------======================*/
-void print_results(Cmd_Options& cmds){
+void print_results(Cmd_Options& cmds, ofstream& output_file){
 
-  // print results to output file
+
 	time_t current_time;
 	current_time = time(NULL);
 
-	program_results_file << "offset start: " << cmds.offset_start << endl;
-	program_results_file << "offset end: " << cmds.offset_end << endl;
-	program_results_file << "searchsize: " << cmds.searchsize << endl;
-	program_results_file << "blocksize: " << cmds.blocksize << endl << endl;
+	output_file << "offset start: " << cmds.offset_start << endl;
+	output_file << "offset end: "   << cmds.offset_end   << endl;
+	output_file << "searchsize: "   << cmds.searchsize   << endl;
+	output_file << "blocksize: "    << cmds.blocksize    << endl;
+  output_file << endl;
 
-	for (auto& match : block_matches) {
-    program_results_file << match.first << ": " << match.second << endl;
-  }
+	for (auto& match : block_matches)
+    output_file << match.first << ": " << match.second << endl;
+
 }
 
 
@@ -644,7 +648,7 @@ void print_progress(){
             << "[0m" << endl;
 
       //progress_stream << template_str;
-      cout << "\n" << B_BLACK << string(progress_bar_length, ' ') << RESET << "\r";
+      cout << B_BLACK << string(progress_bar_length, ' ') << RESET << "\r";
       progress_stream.seekp(1);
       progress_stream << B_GREEN;
       for (int i = 0; i < percentage*ratio; ++i)
