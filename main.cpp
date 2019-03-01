@@ -260,11 +260,14 @@ int main(int argc, char** argv) {
 
   //print results to console
   printf("\n\nSUCCESS!\n\n");
+
+  /*
   cout << "Match count: " << block_matches.size() << endl;
 	for (auto& match : block_matches)
 		cout << match.first << ": " << match.second << endl;
 
   print_results(cmds);
+  */
 }
 /*
   ==============================
@@ -565,7 +568,7 @@ void print_results(Cmd_Options& cmds){
   // print results to output file
 	time_t current_time;
 	current_time = time(NULL);
-	ofstream program_results_file{string{"program_results" + to_string(current_time)}};
+
 	program_results_file << "offset start: " << cmds.offset_start << endl;
 	program_results_file << "offset end: " << cmds.offset_end << endl;
 	program_results_file << "searchsize: " << cmds.searchsize << endl;
@@ -612,41 +615,44 @@ void print_progress(){
 
   const disk_pos filesize = offset_end - offset_start;
   float percentage{0.0f};
-  int progress_bar_length{25};
-  const float ratio = 100/progress_bar_length;
-  const float simplify_1 = static_cast<float>(progress_bar_length)/filesize;
-  const float simplify_2 = static_cast<float>(progress_bar_length)*(offset_start/filesize);
+  int progress_bar_length{40};
+  const float ratio = static_cast<float>(progress_bar_length)/100;
+  const float simplify_1 = static_cast<float>(100)/filesize;
+  const float simplify_2 = static_cast<float>(100)*(offset_start/filesize);
   ostringstream progress_stream{ios::binary | ios::out};
 
-  progress_stream << B_WHITE << setw(progress_bar_length) << setfill(' ') << left << RESET;
-  /*
+  //progress_stream << '[' << B_BLACK << setw(progress_bar_length) << setfill(' ')
+//                  << left << RESET << ']';
+
+  progress_stream << (char)0x1B << (char)0x07 << "[" << B_BLACK;
   for (int i = 0; i < progress_bar_length; ++i)
     progress_stream << " ";
-  */
-  //progress_stream << "] ";
-  auto position = progress_stream.tellp();
 
-  while(percentage < progress_bar_length){
+  progress_stream << RESET << "] " << (char)0x1B << (char)0x08;
+  auto position = progress_stream.tellp();
+  string template_str = progress_stream.str();
+  while(percentage < 100){
 
     this_thread::sleep_for(1s);
 
     lock_guard<mutex> lock(print_lock);
-    percentage = (*file_pointer_position*simplify_1)-simplify_2;
+    percentage = ((float)(*file_pointer_position-offset_start)/filesize)*100;
 
     if (percentage > 1) {
       cout << "[H"  << "MAIN:\nBlock: [32;45m" << *file_pointer_position
             << " / "  << offset_end
             << "[0m" << endl;
 
+      //progress_stream << template_str;
+      cout << "\n" << B_BLACK << string(progress_bar_length, ' ') << RESET << "\r";
       progress_stream.seekp(1);
-      progress_stream << "[44m";
-      for (int i = 0; i < percentage; ++i)
+      progress_stream << B_GREEN;
+      for (int i = 0; i < percentage*ratio; ++i)
         progress_stream << " ";
 
-      progress_stream << "[0m";
-      progress_stream.seekp(progress_bar_length+3);
-      progress_stream  << setfill('0') << setw(2) << right << setprecision(2)
-                       <<  (percentage*ratio) << '%';
+      progress_stream << RESET;
+      progress_stream.seekp(progress_bar_length + 4);
+      progress_stream  << RESET << setfill('0') << setw(2) << right << setprecision(2) << " " << percentage << "%";
       cout << endl << progress_stream.str() << endl;
     }
   }
