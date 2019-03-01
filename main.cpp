@@ -29,24 +29,24 @@
 #include <cmath>
 
 
-const string BLUE     = "[34m";
-const string GREEN    = "[32m";
-const string RED      = "[31m";
-const string YELLOW   = "[33m";
-const string WHITE    = "[37m";
-const string CYAN     = "[36m";
-const string MAGENTA  = "[35m";
-const string BLACK    = "[30m";
-const string B_CYAN   = "[46m";
-const string B_BLACK  = "[40m";
-const string B_BLUE   = "[44m";
-const string B_RED    = "[41m";
-const string B_GREEN  = "[42m";
-const string B_WHITE  = "[47m";
-const string B_YELLOW = "[43m";
-const string B_MAGENTA= "[45m";
-const string BOLD     = "[1m";
-const string RESET    = "[0m";
+const char* BLUE     = "[34m";
+const char* GREEN    = "[32m";
+const char* RED      = "[31m";
+const char* YELLOW   = "[33m";
+const char* WHITE    = "[37m";
+const char* CYAN     = "[36m";
+const char* MAGENTA  = "[35m";
+const char* BLACK    = "[30m";
+const char* B_CYAN   = "[46m";
+const char* B_BLACK  = "[40m";
+const char* B_BLUE   = "[44m";
+const char* B_RED    = "[41m";
+const char* B_GREEN  = "[42m";
+const char* B_WHITE  = "[47m";
+const char* B_YELLOW = "[43m";
+const char* B_MAGENTA= "[45m";
+const char* BOLD     = "[1m";
+const char* RESET    = "[0m";
 
 
 using namespace std;
@@ -610,17 +610,20 @@ void print_hexdump(int line_size, vector<uint8_t>& tmp) {
  -------------======================*/
 void print_progress(){
 
-  disk_pos filesize = offset_end - offset_start;
+  const disk_pos filesize = offset_end - offset_start;
   float percentage{0.0f};
   int progress_bar_length{25};
-  float ratio = 100/progress_bar_length;
-  ostringstream progress_stream{ios::binary};
+  const float ratio = 100/progress_bar_length;
+  const float simplify_1 = static_cast<float>(progress_bar_length)/filesize;
+  const float simplify_2 = static_cast<float>(progress_bar_length)*(offset_start/filesize);
+  ostringstream progress_stream{ios::binary | ios::out};
 
-  progress_stream << "[";
+  progress_stream << B_WHITE << setw(progress_bar_length) << setfill(' ') << left << RESET;
+  /*
   for (int i = 0; i < progress_bar_length; ++i)
     progress_stream << " ";
-
-  progress_stream << "] ";
+  */
+  //progress_stream << "] ";
   auto position = progress_stream.tellp();
 
   while(percentage < progress_bar_length){
@@ -628,8 +631,7 @@ void print_progress(){
     this_thread::sleep_for(1s);
 
     lock_guard<mutex> lock(print_lock);
-    percentage = (static_cast<float>((*file_pointer_position)-offset_start)/
-                                                filesize) * progress_bar_length;
+    percentage = (*file_pointer_position*simplify_1)-simplify_2;
 
     if (percentage > 1) {
       cout << "[H"  << "MAIN:\nBlock: [32;45m" << *file_pointer_position
@@ -638,12 +640,12 @@ void print_progress(){
 
       progress_stream.seekp(1);
       progress_stream << "[44m";
-      for (int i = 0; i < progress; ++i)
+      for (int i = 0; i < percentage; ++i)
         progress_stream << " ";
 
       progress_stream << "[0m";
-      progress_stream.seekp(position);
-      progress_stream  << setw(4) << setfill('0') << right << setprecision(2)
+      progress_stream.seekp(progress_bar_length+3);
+      progress_stream  << setfill('0') << setw(2) << right << setprecision(2)
                        <<  (percentage*ratio) << '%';
       cout << endl << progress_stream.str() << endl;
     }
