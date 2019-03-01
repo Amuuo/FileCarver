@@ -28,6 +28,27 @@
 #include <ctime>
 #include <cmath>
 
+
+const string BLUE     = "[34m";
+const string GREEN    = "[32m";
+const string RED      = "[31m";
+const string YELLOW   = "[33m";
+const string WHITE    = "[37m";
+const string CYAN     = "[36m";
+const string MAGENTA  = "[35m";
+const string BLACK    = "[30m";
+const string B_CYAN   = "[46m";
+const string B_BLACK  = "[40m";
+const string B_BLUE   = "[44m";
+const string B_RED    = "[41m";
+const string B_GREEN  = "[42m";
+const string B_WHITE  = "[47m";
+const string B_YELLOW = "[43m";
+const string B_MAGENTA= "[45m";
+const string BOLD     = "[1m";
+const string RESET    = "[0m";
+
+
 using namespace std;
 typedef unsigned long long disk_pos;
 
@@ -155,7 +176,8 @@ int main(int argc, char** argv) {
 
 
   system("clear");
-
+  offset_start = cmds.offset_start;
+  offset_end = cmds.offset_end;
 
 
   // ===============================================
@@ -164,6 +186,7 @@ int main(int argc, char** argv) {
 
   for (disk_pos i = cmds.offset_start; i < cmds.offset_end; i += cmds.blocksize)
   {
+
     if (i == cmds.offset_start)
     {
       file_pointer_position = &i;
@@ -195,8 +218,8 @@ int main(int argc, char** argv) {
     for (disk_pos j = 0; j < cmds.blocksize; j += thread_blk_sz)
     {
       {
-        lock_guard<mutex> lck(print_lock);
-        uint8_t transfer[thread_blk_sz];
+        lock_guard<mutex> lck(queue_lck);
+        uint8_t* transfer = new uint8_t[thread_blk_sz];
         memcpy(transfer, buffer + j, thread_blk_sz);
         block_queue.push_back({transfer, i+j});
       }
@@ -477,7 +500,7 @@ void search_disk(int thread_id, disk_pos blocksize,
       if(pattern[pattern_counter] == tmp[i]) {
         if ((pattern_counter+1) == pattern.size()) {
           char preview[16];
-          lock_guard<mutex> lock(block_match_mtx);
+          lock_guard<mutex> lock(print_lock);
           memcpy(preview, &tmp[i-pattern_counter], 16);
           block_matches[block_location + (i - pattern_counter)] = preview;
 
@@ -501,7 +524,7 @@ void search_disk(int thread_id, disk_pos blocksize,
       else
         pattern_counter = 0;
     }
-    //delete [] tmp;
+    delete [] tmp;
   }
 }
 
@@ -588,21 +611,41 @@ void print_hexdump(int line_size, vector<uint8_t>& tmp) {
 void print_progress(){
 
   disk_pos filesize = offset_end - offset_start;
-  int percentage{0};
-  ostringstream progress_stream{string(25, ' ')};
-  unique_lock<mutex> prog_lock(progress_mtx);
+  float percentage{0.0f};
+  int progress_bar_length{25};
+  float ratio = 100/progress_bar_length;
+  ostringstream progress_stream{ios::binary};
 
-  while(percentage < 100){
-    progress_bar_cv.wait_for(prog_lock, 1s);
-    lock_guard<mutex> lock(progress_mtx);
-    percentage = ((*file_pointer_position-offset_start)/filesize) * 100;
+  progress_stream << "[";
+  for (int i = 0; i < progress_bar_length; ++i)
+    progress_stream << " ";
 
-    cout << "[H"  << "MAIN:\nBlock: [32;45m" << *file_pointer_position
-          << " / "  << offset_end
-          << "[0m" << "\n";
+  progress_stream << "] ";
+  auto position = progress_stream.tellp();
 
-    progress_stream.seekp(percentage/2);
-    progress_stream << "[45m*[0m";
-    cout << "\n[" << progress_stream.str() << "] " << percentage << "%" << endl;
+  while(percentage < progress_bar_length){
+
+    this_thread::sleep_for(1s);
+
+    lock_guard<mutex> lock(print_lock);
+    percentage = (static_cast<float>((*file_pointer_position)-offset_start)/
+                                                filesize) * progress_bar_length;
+
+    if (percentage > 1) {
+      cout << "[H"  << "MAIN:\nBlock: [32;45m" << *file_pointer_position
+            << " / "  << offset_end
+            << "[0m" << endl;
+
+      progress_stream.seekp(1);
+      progress_stream << "[44m";
+      for (int i = 0; i < progress; ++i)
+        progress_stream << " ";
+
+      progress_stream << "[0m";
+      progress_stream.seekp(position);
+      progress_stream  << setw(4) << setfill('0') << right << setprecision(2)
+                       <<  (percentage*ratio) << '%';
+      cout << endl << progress_stream.str() << endl;
+    }
   }
 }
