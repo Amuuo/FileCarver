@@ -1,10 +1,8 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <locale.h>
-#include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -28,6 +26,7 @@
 #include <ctime>
 #include <cmath>
 #include <ncurses.h>
+#include <cdk.h>
 #include <menu.h>
 #include <dirent.h>
 #include <cstdio>
@@ -123,8 +122,8 @@ void search_disk     (int, disk_pos, int, bool);
 void print_results   (Cmd_Options&, ofstream&);
 void print_hexdump   (int, vector<uint8_t>&);
 void print_progress  ();
-void launch_menu     ();
-
+//void launch_menu     ();
+void ncurses_testing ();
 
 /*=========------------=============
            GLOBAL VARIABLES
@@ -148,12 +147,67 @@ disk_pos             offset_end{};
 int                  row;
 int                  col;
 deque<pair<uint8_t*,disk_pos>> block_queue{};
+disk_pos       filesize{0};
 
-
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
-#define CTRLD 5
-char* menu_choices[]{"Continue", "New", "Settings", "More", "About", "Exit"};
+//#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
+//#define CTRLD 5
+//char* menu_choices[]{"Continue", "New", "Settings", "More", "About", "Exit"};
 struct dirent64** dir_list;
+
+
+
+void ncurses2(){
+  /* Declare variables.  */
+  CDKSCREEN    *cdkscreen;
+  CDKLABEL     *demo;
+  char         *mesg[4];
+
+  cdkscreen = initCDKScreen (NULL);
+
+
+  while(1) {
+
+
+    /* Start CDK Colors */
+    initCDKColor();
+
+    /* Set the labels up.  */
+    mesg[0] = "<C><#UL><#HL(26)><#UR>";
+    mesg[1] = "<C><#VL></R>This text should be boxed.<!R><#VL>";
+    mesg[2] = "<C><#LL><#HL(26)><#LR>";
+    mesg[3] = "<C>While this is not.";
+
+    /* Declare the labels.  */
+    demo = newCDKLabel (cdkscreen, CENTER, CENTER, mesg, 4, TRUE, TRUE);
+
+
+    /* Is the label NULL???  */
+    if (demo == (CDKLABEL *)NULL)
+    {
+      /* Clean up the memory.  */
+      destroyCDKScreen (cdkscreen);
+
+      /* End curses...  */
+      endCDK();
+
+      /* Spit out a message.  */
+      printf ("Oops. Can't seem to create the label. Is the window too small?\n");
+      exit (1);
+    }
+
+  /* Draw the CDK screen.  */
+    refreshCDKScreen (cdkscreen);
+    this_thread::sleep_for(5s);
+
+  }
+  waitCDKLabel (demo, ' ');
+
+  /* Clean up */
+  destroyCDKLabel (demo);
+  destroyCDKScreen (cdkscreen);
+  endCDK();
+  exit (0);
+}
 
 
 
@@ -166,8 +220,11 @@ struct dirent64** dir_list;
 int main(int argc, char** argv) {
 
   int intput;
-  //cin >> intput;
+  cin >> intput;
 
+  thread tester{&ncurses2};
+  tester.join();
+  //ncurses_testing();
   Cmd_Options cmds{get_cmd_options(argc, argv)};
 
   array<std::thread, 8> thread_arr;
@@ -202,29 +259,6 @@ int main(int argc, char** argv) {
   // ===============================================
 
 
-  char* msg = "Testing NCURSES BOIII";
-
-
-  ostringstream dir_list_ss;
-  int list_count = 0;
-  int biggest = 0;
-  int n = scandir64("/dev", &dir_list, NULL, alphasort64);
-  cout << "Directory List:\n\t";
-
-  while(n--) {
-    dir_list_ss << "\t" << dir_list[n]->d_name << "\n";
-    biggest = (strlen(dir_list[n]->d_name) > biggest ?
-                strlen(dir_list[n]->d_name) : biggest);
-    ++list_count;
-  }
-  initscr();
-  getmaxyx(stdscr, row, col);
-  mvprintw(row/2-(list_count/2) > 0 ? (row/2-list_count/2) : 1, (col/2)-(biggest/2), "%s", dir_list_ss.str().c_str());
-  char* usr_msg = "PRESS ANY KEY TO CONTINUE";
-  mvprintw(row-2, (col/2)-strlen(usr_msg)/2, "%s", usr_msg);
-  intput = getch();
-
-
 
 
 
@@ -241,7 +275,7 @@ int main(int argc, char** argv) {
     {
       file_pointer_position = &i;
       thread progress_thread{&print_progress};
-      progress_thread.detach();
+      //progress_thread.detach();
     }
 
     input_file.seekg(i);
@@ -693,16 +727,17 @@ void print_progress(){
 
       cout << CURSOR_L << progress_stream.str();
     }
-    */
   }
+    */
 }
 
 
 
 
-
+/*
 void launch_menu() {
 
+  float percentage{0};
   int x, y, c, n_choices;
 
   ITEM** my_items;
@@ -755,7 +790,7 @@ void launch_menu() {
     ostringstream  curses_test{};
     this_thread::sleep_for(500ms);
 
-    percentage = ((float)(*file_pointer_position-offset_start)/filesize)*100;
+    float percentage = ((float)(*file_pointer_position-offset_start)/filesize)*100;
 
     //if (percentage > 1) {
       lock_guard<mutex> lck(print_lock);
@@ -777,4 +812,68 @@ void launch_menu() {
       printw("X: %d, Y: %d", x, y);
 
       refresh();
+  }
+}
+*/
+
+
+
+void ncurses_testing () {
+
+
+  CDKSCREEN* cdkscreen;
+  CDKLABEL*  demo;
+  char*     test_objs[4];
+
+  cdkscreen = initCDKScreen(NULL);
+  initCDKColor();
+
+
+  test_objs[0] = "</31> First color tested string. <!31>";
+  test_objs[1] = "</05> Second color tested string. <!05>";
+  test_objs[2] = "</26> Third color tested string. <!26>";
+  test_objs[3] = "<C> Default color tested string.";
+
+  demo = newCDKLabel(cdkscreen, CENTER, CENTER, test_objs, 4, TRUE, TRUE);
+
+  drawCDKLabel(demo, TRUE);
+  waitCDKLabel(demo, ' ');
+
+  int l = getch();
+
+  destroyCDKLabel(demo);
+  destroyCDKScreen(cdkscreen);
+  endCDK();
+  //exit(1);
+
+
+  char* msg = "Testing NCURSES BOIII";
+
+
+  ostringstream dir_list_ss;
+  int list_count = 0;
+  int biggest = 0;
+  int n = scandir64("/dev", &dir_list, NULL, alphasort64);
+  cout << "Directory List:\n\t";
+
+  while(n--) {
+
+    dir_list_ss << "\t" << dir_list[n]->d_name << " ";
+
+    if (n%5==0)
+      dir_list_ss << "\n";
+
+    biggest = (strlen(dir_list[n]->d_name) > biggest ?
+                strlen(dir_list[n]->d_name) : biggest);
+    ++list_count;
+  }
+
+  initscr();
+  getmaxyx(stdscr, row, col);
+  mvprintw(row/2-(list_count/2) > 0 ? (row/2-list_count/2) : 1, (col/2)-(biggest/2), "%s", dir_list_ss.str().c_str());
+  char* usr_msg = "PRESS ANY KEY TO CONTINUE";
+  mvprintw(row-2, (col/2)-strlen(usr_msg)/2, "%s", usr_msg);
+  int intput = getch();
+
+
 }

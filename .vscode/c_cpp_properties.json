@@ -6,12 +6,14 @@
                 "${workspaceFolder}/**",
                 "/usr/include/c++/7",
                 "/usr/include/c++/7.3.0",
-                "/usr/include/x86_64-linux-gnu/c++/7"
+                "/usr/include/x86_64-linux-gnu/c++/7",
+                "/usr/local/include/cdk",
+                "/usr/local/include"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang++-6.0",
             "cStandard": "c11",
-            "cppStandard": "c++17",            
+            "cppStandard": "c++17",
             "intelliSenseMode": "clang-x64"
         }
     ],
