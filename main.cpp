@@ -26,10 +26,11 @@
 #include <ctime>
 #include <cmath>
 #include <ncurses.h>
-#include <cdk.h>
+
 #include <menu.h>
 #include <dirent.h>
 #include <cstdio>
+#include <memory>
 
 
 
@@ -146,7 +147,7 @@ disk_pos             offset_start{};
 disk_pos             offset_end{};
 int                  row;
 int                  col;
-deque<pair<uint8_t*,disk_pos>> block_queue{};
+deque<pair<shared_ptr<uint8_t*>,disk_pos>> block_queue{};
 disk_pos       filesize{0};
 
 //#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
@@ -156,59 +157,81 @@ struct dirent64** dir_list;
 
 
 
-void ncurses2(){
-  /* Declare variables.  */
-  CDKSCREEN    *cdkscreen;
-  CDKLABEL     *demo;
-  char         *mesg[4];
 
-  cdkscreen = initCDKScreen (NULL);
+struct ScreenObj {
 
 
-  while(1) {
+  ScreenObj(){}
+  void init() {
+    win = initscr();
+    // resizeterm(25, 50);
+    clear();
+    curs_set(0);
+    border(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_BLACK,
+           COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
+    getmaxyx(win, row, col);
+    screen_center_row = row / 3;
+    screen_center_col = col / 2;
 
+    title_color = init_pair(1, COLOR_BLACK, COLOR_GREEN);
 
-    /* Start CDK Colors */
-    initCDKColor();
+    title = "F I L E  C A R V E R";
+    attron(COLOR_PAIR(1));
+    print_centered_string(title, screen_center_row - 4);
+    attroff(COLOR_PAIR(1));
+    refresh_screen();
+    }
+    ~ScreenObj() {
 
-    /* Set the labels up.  */
-    mesg[0] = "<C><#UL><#HL(26)><#UR>";
-    mesg[1] = "<C><#VL></R>This text should be boxed.<!R><#VL>";
-    mesg[2] = "<C><#LL><#HL(26)><#LR>";
-    mesg[3] = "<C>While this is not.";
-
-    /* Declare the labels.  */
-    demo = newCDKLabel (cdkscreen, CENTER, CENTER, mesg, 4, TRUE, TRUE);
-
-
-    /* Is the label NULL???  */
-    if (demo == (CDKLABEL *)NULL)
-    {
-      /* Clean up the memory.  */
-      destroyCDKScreen (cdkscreen);
-
-      /* End curses...  */
-      endCDK();
-
-      /* Spit out a message.  */
-      printf ("Oops. Can't seem to create the label. Is the window too small?\n");
-      exit (1);
     }
 
-  /* Draw the CDK screen.  */
-    refreshCDKScreen (cdkscreen);
-    this_thread::sleep_for(5s);
+    int       title_color;
+    int       x, y, row, col;
+    int       screen_center_row;
+    int       screen_center_col;
+    int       file_counter;
+    disk_pos  blocks_scanned;
+    string    title;
+    WINDOW*   win;
 
-  }
-  waitCDKLabel (demo, ' ');
+    string oss;
 
-  /* Clean up */
-  destroyCDKLabel (demo);
-  destroyCDKScreen (cdkscreen);
-  endCDK();
-  exit (0);
-}
 
+    int half_len(string& line) {
+
+      return line.size()/2;
+    }
+
+    void print_centered_string(string& line, int row) {
+      mvwprintw(win, row, screen_center_col - half_len(line), "%s",
+                line.c_str(), NULL);
+      oss.erase();
+    }
+
+    void update_found_counter() {
+      flash();
+      ++file_counter;
+      refresh_screen();
+    }
+
+    void update_scan_counter(disk_pos&& i) {
+      blocks_scanned = i;
+      refresh_screen();
+    }
+
+    void refresh_screen() {
+      oss += "Files found: " + to_string(file_counter);
+      print_centered_string(oss, screen_center_row - 2);
+      oss += "Bytes scanned: " + to_string(blocks_scanned);
+      print_centered_string(oss, screen_center_row);
+      oss.erase();
+      refresh();
+    }
+};
+
+
+
+ScreenObj screenObj;
 
 
 /*==============================
@@ -219,12 +242,10 @@ void ncurses2(){
  */
 int main(int argc, char** argv) {
 
-  int intput;
-  cin >> intput;
+  //int intput;
+  //cin >> intput;
 
-  thread tester{&ncurses2};
-  tester.join();
-  //ncurses_testing();
+
   Cmd_Options cmds{get_cmd_options(argc, argv)};
 
   array<std::thread, 8> thread_arr;
@@ -232,7 +253,8 @@ int main(int argc, char** argv) {
   ofstream output_file;
   ofstream header_file;
 
-  long double progress_multiplier = 100.0f /  (cmds.offset_end-cmds.offset_start);
+
+  //long double progress_multiplier = 100.0f /  (cmds.offset_end-cmds.offset_start);
   disk_pos thread_blk_sz = cmds.blocksize / 8;
 
   //open_io_files(input_file, output_file, cmds);
@@ -252,7 +274,7 @@ int main(int argc, char** argv) {
   offset_start = cmds.offset_start;
   offset_end = cmds.offset_end;
 
-
+  screenObj.init();
 
   // ===============================================
   //        N C U R S E S   T E S T   A R E A
@@ -271,12 +293,14 @@ int main(int argc, char** argv) {
   for (disk_pos i = cmds.offset_start; i < cmds.offset_end; i += cmds.blocksize)
   {
 
+    /*
     if (i == cmds.offset_start)
     {
       file_pointer_position = &i;
       thread progress_thread{&print_progress};
       //progress_thread.detach();
     }
+    */
 
     input_file.seekg(i);
     input_file.read((char*)buffer, cmds.blocksize);
@@ -303,16 +327,17 @@ int main(int argc, char** argv) {
     {
       {
         lock_guard<mutex> lck(queue_lck);
-        uint8_t* transfer = new uint8_t[thread_blk_sz];
-        memcpy(transfer, buffer + j, thread_blk_sz);
+        /*shared_ptr<uint8_t>*/auto transfer = make_shared<uint8_t*>(new uint8_t(thread_blk_sz));
+        memcpy(transfer.get(), buffer + j, thread_blk_sz);
+        //auto pos = i + j;
         block_queue.push_back({transfer, i+j});
       }
       queue_is_empty.notify_one();
     }
-    if (cmds.verbose && (i % 1000000) < 100 )
+    if (/*cmds.verbose && */(i % 10000000) < 100 )
     {
       lock_guard<mutex> lck(queue_lck);
-      cout << "Block " << i << ", Queue.size(): " << block_queue.size() << endl;
+      screenObj.update_scan_counter(i - cmds.offset_start);
     }
   }
   // ===============================================
@@ -342,7 +367,9 @@ int main(int argc, char** argv) {
   input_file.close();
   output_file.close();
 
-
+  curs_set(1);
+  clear();
+  endwin();
   //print results to console
   printf("\n\nSUCCESS!\n\n");
 }
@@ -540,7 +567,7 @@ void search_disk(int thread_id, disk_pos blocksize,
   vector<uint8_t> pattern {0x49, 0x49, 0x2a, 0x00, 0x10,
                           0x00, 0x00, 0x00, 0x43, 0x52};
 
-  uint8_t* tmp {nullptr};
+  shared_ptr<uint8_t*> tmp;
   disk_pos block_location {};
 
   if (verbose)
@@ -585,15 +612,15 @@ void search_disk(int thread_id, disk_pos blocksize,
 
 
     for (disk_pos pattern_counter {0}, i {0}; i < blocksize; ++i) {
-      if(pattern[pattern_counter] == tmp[i]) {
+      if(pattern[pattern_counter] == *(tmp.get())[i]) {
         if ((pattern_counter+1) == pattern.size()) {
           char preview[16];
           lock_guard<mutex> lock(print_lock);
-          memcpy(preview, &tmp[i-pattern_counter], 16);
+          memcpy(preview, (tmp.get()) + (i-pattern_counter), 16);
           block_matches[block_location + (i - pattern_counter)] = preview;
 
-          cout << TOP_LEFT << "\n\n\n\n";
-
+          screenObj.update_found_counter();
+          /*
           for (int j = 0; j < (block_matches.size() % 30) + 1; ++j)
             cout << endl;
 
@@ -604,7 +631,7 @@ void search_disk(int thread_id, disk_pos blocksize,
 
           cout << endl;
           pattern_counter = 0;
-          i += blocksize;
+          i += blocksize;*/
         }
         else
           pattern_counter++;
@@ -612,7 +639,7 @@ void search_disk(int thread_id, disk_pos blocksize,
       else
         pattern_counter = 0;
     }
-    delete [] tmp;
+    //delete [] tmp;
   }
 }
 
@@ -708,7 +735,7 @@ void print_progress(){
   ostringstream  progress_stream {ios::binary|ios::out};
 
 
-      /*
+
       progress_stream << "[" << B_BLACK << setw(progress_bar_length)
                       << " " << RESET << "]";
 
@@ -726,154 +753,12 @@ void print_progress(){
                        << "%" << RESET;
 
       cout << CURSOR_L << progress_stream.str();
-    }
-  }
-    */
 }
 
 
 
 
-/*
-void launch_menu() {
-
-  float percentage{0};
-  int x, y, c, n_choices;
-
-  ITEM** my_items;
-  MENU*  my_menu;
-  ITEM*  current_item;
-
-  initscr();
-  cbreak();
-  noecho();
-  keypad(stdscr, TRUE);
-
-  n_choices = ARRAY_SIZE(menu_choices);
-  my_items = (ITEM**)calloc(n_choices+1, sizeof(ITEM*));
-  for(int i = 0; i < n_choices; ++i)
-    my_items[i] = new_item(menu_choices[i], menu_choices[i]);
-
-  my_items[n_choices] = (ITEM*)NULL;
-  my_menu = new_menu((ITEM**)my_items);
-  mvprintw(LINES-2, 0, "F1 to Exit");
-  post_menu(my_menu);
-  refresh();
-
-  while((c = getch()) != KEY_F(1)){
-    switch(c){
-      case KEY_DOWN:
-        menu_driver(my_menu, REQ_DOWN_ITEM);
-        break;
-      case KEY_UP:
-        menu_driver(my_menu, REQ_UP_ITEM);
-        break;
-    }
-  }
-  free_item(my_items[0]);
-  free_item(my_items[1]);
-  free_menu(my_menu);
-  endwin();
-
-  getmaxyx(stdscr, row, col);
-  start_color();
-  init_pair(1, COLOR_RED, COLOR_BLACK);
-  init_pair(2, COLOR_WHITE, COLOR_GREEN);
-  init_pair(3, COLOR_GREEN, COLOR_BLACK);
-  char* title = "F I L E  C A R V E R";
-  WINDOW* win = newwin(row, col, y, x);
-
-  //lock_guard<mutex> q_lck(queue_lck);
-  while(percentage < 100){
-
-    getyx(win, y, x);
-    ostringstream  curses_test{};
-    this_thread::sleep_for(500ms);
-
-    float percentage = ((float)(*file_pointer_position-offset_start)/filesize)*100;
-
-    //if (percentage > 1) {
-      lock_guard<mutex> lck(print_lock);
-      mvprintw(row/2 -3, (col-strlen(title))/2, "%s", title);
-      mvchgat(row/2 -3, (col-strlen(title))/2-1, strlen(title) + 2,
-              A_STANDOUT, 1, NULL);
-
-      curses_test << *file_pointer_position<< " / "  << offset_end;
-
-      mvprintw(row/2 - 1, (col-strlen(curses_test.str().c_str()))/2,
-               "%s", curses_test.str().c_str());
-
-      mvchgat(row/2 - 1, (col-strlen(curses_test.str().c_str()))/2-1,
-      curses_test.str().size()+2, A_STANDOUT, 3, NULL);
-
-
-      mvprintw(row/2 + 3, (col-2)/2, "%d\%", percentage);
-      mvchgat(row/2 + 3, (col-2)/2-1, 6, A_STANDOUT, 3, NULL);
-      printw("X: %d, Y: %d", x, y);
-
-      refresh();
-  }
-}
-*/
 
 
 
-void ncurses_testing () {
 
-
-  CDKSCREEN* cdkscreen;
-  CDKLABEL*  demo;
-  char*     test_objs[4];
-
-  cdkscreen = initCDKScreen(NULL);
-  initCDKColor();
-
-
-  test_objs[0] = "</31> First color tested string. <!31>";
-  test_objs[1] = "</05> Second color tested string. <!05>";
-  test_objs[2] = "</26> Third color tested string. <!26>";
-  test_objs[3] = "<C> Default color tested string.";
-
-  demo = newCDKLabel(cdkscreen, CENTER, CENTER, test_objs, 4, TRUE, TRUE);
-
-  drawCDKLabel(demo, TRUE);
-  waitCDKLabel(demo, ' ');
-
-  int l = getch();
-
-  destroyCDKLabel(demo);
-  destroyCDKScreen(cdkscreen);
-  endCDK();
-  //exit(1);
-
-
-  char* msg = "Testing NCURSES BOIII";
-
-
-  ostringstream dir_list_ss;
-  int list_count = 0;
-  int biggest = 0;
-  int n = scandir64("/dev", &dir_list, NULL, alphasort64);
-  cout << "Directory List:\n\t";
-
-  while(n--) {
-
-    dir_list_ss << "\t" << dir_list[n]->d_name << " ";
-
-    if (n%5==0)
-      dir_list_ss << "\n";
-
-    biggest = (strlen(dir_list[n]->d_name) > biggest ?
-                strlen(dir_list[n]->d_name) : biggest);
-    ++list_count;
-  }
-
-  initscr();
-  getmaxyx(stdscr, row, col);
-  mvprintw(row/2-(list_count/2) > 0 ? (row/2-list_count/2) : 1, (col/2)-(biggest/2), "%s", dir_list_ss.str().c_str());
-  char* usr_msg = "PRESS ANY KEY TO CONTINUE";
-  mvprintw(row-2, (col/2)-strlen(usr_msg)/2, "%s", usr_msg);
-  int intput = getch();
-
-
-}
