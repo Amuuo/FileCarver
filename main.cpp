@@ -28,6 +28,46 @@
 #include <ctime>
 #include <cmath>
 
+#include <gtkmm.h>
+
+using namespace Glib;
+using namespace Gtk;
+
+
+
+
+class Form : public Window {
+
+  public:
+
+    Form() {
+      this->add(this->scrolledWindow);
+      this->scrolledWindow.add(this->fixed);
+      this->fixed.add(this->label1);
+      this->fixed.move(this->label1, 50, 50);
+      this->label1.set_text("Files Found: 0 files found");
+      this->set_title("File Carver");
+      this->resize(200, 200);
+      this->show_all();
+    }
+
+   private:
+
+    Fixed fixed;
+    ScrolledWindow scrolledWindow;
+    Label label1;
+    int fileFound = 0;
+
+
+    void file_found() {
+      this->label1.set_text(ustring::compose(
+        "File Found: %d files found", ++fileFound));
+    }
+};
+
+
+
+
 
 const char* BLUE     = "[34m";
 const char* GREEN    = "[32m";
@@ -179,6 +219,13 @@ int main(int argc, char** argv) {
   offset_start = cmds.offset_start;
   offset_end = cmds.offset_end;
 
+  cout << "Right before application run" << endl;
+  auto application = Application::create(argc, argv);
+  Form form;
+  thread windowThread{application->run, {form}};
+
+
+  // thread windowThread{&application->run, form};
 
   // ===============================================
   // read disk and push data chunks into block_queue
@@ -241,12 +288,11 @@ int main(int argc, char** argv) {
   // ========================================================
   readingIsDone = true;
   unique_lock<mutex> main_lck(main_finished_lock);
-  while(!block_queue.empty())
-    children_are_running.wait_for(main_lck, 3000ms,
-
+  while (!block_queue.empty()) children_are_running.wait_for(
+            main_lck, 3000ms, [] { return block_queue.empty(); });
 
   print_results(cmds, output_file);
-                                  [] { return block_queue.empty(); });
+
 
   for(auto& match : block_matches){
     output_file << match.first << " || ";
@@ -263,6 +309,7 @@ int main(int argc, char** argv) {
 
   //print results to console
   printf("\n\nSUCCESS!\n\n");
+}
 
   /*
   cout << "Match count: " << block_matches.size() << endl;
@@ -272,6 +319,7 @@ int main(int argc, char** argv) {
   print_results(cmds);
 
 }
+
 /*
   ==============================
   ==============================

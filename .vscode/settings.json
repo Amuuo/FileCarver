@@ -20,5 +20,6 @@
     "editor.cursorSmoothCaretAnimation": true,
     "editor.formatOnType": true,
     "editor.quickSuggestionsDelay": 0,
-    "files.trimTrailingWhitespace": true
+    "files.trimTrailingWhitespace": true,
+    "C_Cpp.intelliSenseEngineFallback": "Disabled"
 }
