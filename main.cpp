@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
 
   Cmd_Options cmds{get_cmd_options(argc, argv)};
 
-  array<std::thread, 8> thread_arr;
+  array<std::thread, 4> thread_arr;
   ifstream input_file;
   ofstream output_file;
   ofstream header_file;
@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
       }
       queue_is_empty.notify_one();
     }
-    if (/*cmds.verbose && */(i % 1000000) == 0 )
+    if (/*cmds.verbose && */(i % 10000) == 0 )
     {
       lock_guard<mutex> lck(queue_lck);
       screenObj.update_scan_counter(i - cmds.offset_start);
@@ -337,6 +337,7 @@ void search_disk(int thread_id, disk_pos blocksize,
   {
     lock_guard<mutex> lck{queue_lck};
     log.LaunchLogWindow();
+    log << "\nThread #" << to_string(thread_id).c_str();
   }
 
 
@@ -414,6 +415,8 @@ void search_disk(int thread_id, disk_pos blocksize,
           block_matches[block_location + (i - pattern_counter)] = preview;
 
           screenObj.update_found_counter();
+
+          log << "\nFOUND: " << print_hexdump(16, preview).c_str();
           /*
           for (int j = 0; j < (block_matches.size() % 30) + 1; ++j)
             cout << endl;
@@ -495,22 +498,24 @@ void print_results(Cmd_Options& cmds, ofstream& output_file){
 /*=========------------=============
            	PRINT HEXDUMP
  -------------======================*/
-void print_hexdump(int line_size, vector<uint8_t>& tmp) {
+string print_hexdump(int line_size, char* tmp) {
+
+  ostringstream oss;
 
   int j = 0;
 
   for (int i = 0; i < line_size; ++i)
-    cout << setw(2) << setfill('0') << hex <<
-            static_cast<unsigned int>(tmp[j + i]) << " ";
+    oss << setw(2) << setfill('0') << hex <<
+            static_cast<unsigned short>(tmp[j + i]) << " ";
 
-  cout << "  |";
+  oss << "  |";
 
   for (int i = 0; i < line_size; ++i)
-    cout << (tmp[j + i] > 33 && tmp[j + i] < 127 ?
+    oss << (tmp[j + i] > 33 && tmp[j + i] < 127 ?
                             static_cast<char>(tmp[j + i]) : '.');
 
-  cout << "|";
-  cout << endl;
+  oss << "|";
+  return oss.str();
 };
 
 

@@ -76,7 +76,7 @@ struct Logger {
   Logger(){}
 
   ofstream outputFile{};
-
+  int fd;
 
   void LaunchLogWindow()
   {
@@ -293,7 +293,7 @@ void open_io_files   (ifstream&, ofstream&, Cmd_Options&, Logger&);
 void sig_handler     (int signal_number);
 void search_disk     (int, disk_pos, int, bool);
 void print_results   (Cmd_Options&, ofstream&);
-void print_hexdump   (int, vector<uint8_t>&);
+string print_hexdump   (int, char*);
 void print_progress  ();
 void ncurses_testing ();
 
