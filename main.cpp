@@ -1,238 +1,5 @@
-#include <fcntl.h>
-#include <getopt.h>
-#include <locale.h>
-#include <signal.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <array>
-#include <atomic>
-#include <condition_variable>
-#include <fstream>
-#include <iomanip>
-#include <iostream>
-#include <iterator>
-#include <map>
-#include <mutex>
-#include <queue>
-#include <regex>
-#include <sstream>
-#include <string>
-#include <thread>
-#include <vector>
-#include <utility>
-#include <functional>
-#include <ctime>
-#include <cmath>
-#include <ncurses.h>
 
-#include <menu.h>
-#include <dirent.h>
-#include <cstdio>
-#include <memory>
-
-
-
-const char* BLUE      = "[34m";
-const char* GREEN     = "[32m";
-const char* RED       = "[31m";
-const char* YELLOW    = "[33m";
-const char* WHITE     = "[37m";
-const char* CYAN      = "[36m";
-const char* MAGENTA   = "[35m";
-const char* BLACK     = "[30m";
-const char* B_CYAN    = "[46m";
-const char* B_BLACK   = "[40m";
-const char* B_BLUE    = "[44m";
-const char* B_RED     = "[41m";
-const char* B_GREEN   = "[42m";
-const char* B_WHITE   = "[47m";
-const char* B_YELLOW  = "[43m";
-const char* B_MAGENTA = "[45m";
-const char* BOLD      = "[1m";
-const char* RESET     = "[0m";
-const char* REVERSE   = "[7m";
-const char* TOP_LEFT  = "[H";
-const char* CURSOR_S  = "[s";
-const char* CURSOR_L  = "[u";
-
-
-using namespace std;
-typedef unsigned long long disk_pos;
-
-
-/*=========------------=============
-         STRUCT: CMD_OPTIONS
- -------------======================*/
-struct Cmd_Options {
-
-  Cmd_Options(){}
-  Cmd_Options(int _argc, char** _argv, bool v, disk_pos b,
-              disk_pos os, disk_pos oe, int s) :
-              argc{_argc}, argv{_argv}, verbose{v}, blocksize{b},
-              offset_start{os}, offset_end{oe}, searchsize{s} {}
-  Cmd_Options(const Cmd_Options& cpy){
-    blocksize      = cpy.blocksize;
-    offset_start   = cpy.offset_start;
-    offset_end     = cpy.offset_end;
-    output_folder  = cpy.output_folder;
-    input          = cpy.input;
-    output_file    = cpy.output_file;
-    argc           = cpy.argc;
-    searchsize     = cpy.searchsize;
-    argv           = cpy.argv;
-    verbose        = cpy.verbose;
-  }
-  Cmd_Options(Cmd_Options&& cpy){
-    blocksize      = move(cpy.blocksize);
-    offset_start   = move(cpy.offset_start);
-    offset_end     = move(cpy.offset_end);
-    output_folder  = move(cpy.output_folder);
-    input          = move(cpy.input);
-    output_file    = move(cpy.output_file);
-    argc           = move(cpy.argc);
-    searchsize     = move(cpy.searchsize);
-    argv           = move(cpy.argv);
-    verbose        = move(cpy.verbose);
-  }
-
-  disk_pos  blocksize     {0};
-  disk_pos  offset_start  {0};
-  disk_pos  offset_end    {0};
-  string    output_folder {};
-  string    input         {};
-  string    output_file   {};
-  int       argc          {0};
-  int       searchsize    {0};
-  char**    argv          {nullptr};
-  bool      verbose       {false};
-
-  void print_all_options();
-};
-
-
-
-/*=========------------=============
-        FUNCTION DEFINITIONS
- -------------======================*/
-Cmd_Options get_cmd_options (int, char**);
-void open_io_files   (ifstream&, ofstream&, Cmd_Options&);
-void sig_handler     (int signal_number);
-void search_disk     (int, disk_pos, int, bool);
-void print_results   (Cmd_Options&, ofstream&);
-void print_hexdump   (int, vector<uint8_t>&);
-void print_progress  ();
-//void launch_menu     ();
-void ncurses_testing ();
-
-/*=========------------=============
-           GLOBAL VARIABLES
- -------------======================*/
-mutex                queue_lck{};
-mutex                queue_wait_lck{};
-mutex                print_lock{};
-mutex                main_finished_lock{};
-mutex                block_match_mtx{};
-mutex                progress_mtx{};
-condition_variable   queue_is_empty{};
-condition_variable   children_are_running{};
-condition_variable   progress_bar_cv{};
-atomic<bool>         readingIsDone{false};
-int                  terminate_early;
-int                  match_count{0};
-disk_pos*            file_pointer_position{nullptr};
-map<disk_pos, char*> block_matches{};
-disk_pos             offset_start{};
-disk_pos             offset_end{};
-int                  row;
-int                  col;
-deque<pair<shared_ptr<uint8_t*>,disk_pos>> block_queue{};
-disk_pos       filesize{0};
-
-//#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
-//#define CTRLD 5
-//char* menu_choices[]{"Continue", "New", "Settings", "More", "About", "Exit"};
-struct dirent64** dir_list;
-
-
-
-
-struct ScreenObj {
-
-
-  ScreenObj(){}
-  void init() {
-    win = initscr();
-    // resizeterm(25, 50);
-    clear();
-    curs_set(0);
-    border(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_BLACK,
-           COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
-    getmaxyx(win, row, col);
-    screen_center_row = row / 3;
-    screen_center_col = col / 2;
-
-    title_color = init_pair(1, COLOR_BLACK, COLOR_GREEN);
-
-    title = "F I L E  C A R V E R";
-    attron(COLOR_PAIR(1));
-    print_centered_string(title, screen_center_row - 4);
-    attroff(COLOR_PAIR(1));
-    refresh_screen();
-    }
-    ~ScreenObj() {
-
-    }
-
-    int       title_color;
-    int       x, y, row, col;
-    int       screen_center_row;
-    int       screen_center_col;
-    int       file_counter;
-    disk_pos  blocks_scanned;
-    string    title;
-    WINDOW*   win;
-
-    string oss;
-
-
-    int half_len(string& line) {
-
-      return line.size()/2;
-    }
-
-    void print_centered_string(string& line, int row) {
-      mvwprintw(win, row, screen_center_col - half_len(line), "%s",
-                line.c_str(), NULL);
-      oss.erase();
-    }
-
-    void update_found_counter() {
-      flash();
-      ++file_counter;
-      refresh_screen();
-    }
-
-    void update_scan_counter(disk_pos&& i) {
-      blocks_scanned = i;
-      refresh_screen();
-    }
-
-    void refresh_screen() {
-      oss += "Files found: " + to_string(file_counter);
-      print_centered_string(oss, screen_center_row - 2);
-      oss += "Bytes scanned: " + to_string(blocks_scanned);
-      print_centered_string(oss, screen_center_row);
-      oss.erase();
-      refresh();
-    }
-};
-
-
-
-ScreenObj screenObj;
-
+#include "main.h"
 
 /*==============================
   ==============================
@@ -242,8 +9,16 @@ ScreenObj screenObj;
  */
 int main(int argc, char** argv) {
 
-  //int intput;
-  //cin >> intput;
+
+  signal(SIGINT, sig_handler);
+  signal(SIGKILL, sig_handler);
+  signal(SIGTERM, sig_handler);
+  signal(SIGQUIT, sig_handler);
+  signal(SIGHUP, sig_handler);
+  signal(SIGABRT, sig_handler);
+
+  Logger log;
+  log.LaunchLogWindow();
 
 
   Cmd_Options cmds{get_cmd_options(argc, argv)};
@@ -257,12 +32,13 @@ int main(int argc, char** argv) {
   //long double progress_multiplier = 100.0f /  (cmds.offset_end-cmds.offset_start);
   disk_pos thread_blk_sz = cmds.blocksize / 8;
 
-  //open_io_files(input_file, output_file, cmds);
-  //uint8_t* buffer = new uint8_t[cmds.blocksize];
+  open_io_files(input_file, output_file, cmds, log);
   uint8_t buffer[cmds.blocksize];
 
+  cmds.print_all_options(log);
+
   // launch search threads
-  for (int j = 0; j < 8; ++j) {
+  for (int j = 0; j < thread_arr.size(); ++j) {
     if (cmds.verbose) cout << "\nSpawing thread #" << j + 1 << endl;
 
     thread_arr[j] = thread{&search_disk, j + 1, thread_blk_sz,
@@ -276,20 +52,8 @@ int main(int argc, char** argv) {
 
   screenObj.init();
 
-  // ===============================================
-  //        N C U R S E S   T E S T   A R E A
-  // ===============================================
 
-
-
-
-
-
-
-  // ===============================================
   // read disk and push data chunks into block_queue
-  // ===============================================
-
   for (disk_pos i = cmds.offset_start; i < cmds.offset_end; i += cmds.blocksize)
   {
 
@@ -311,15 +75,17 @@ int main(int argc, char** argv) {
       {
         int counter = 0;
         lock_guard<mutex> lck(print_lock);
-        cout << endl << endl << "MAIN THREAD: " << endl;
+        log << "\n\nMAIN THREAD: \n";
         for (int k = 0; k < cmds.blocksize; ++k)
         {
-          cout << setw(2) << setfill('0') << hex <<
+          ostringstream oss{};
+          oss << setw(2) << setfill('0') << hex <<
                   static_cast<unsigned short>(buffer[k]);
+          log << oss.str().c_str();
           if(counter++ % cmds.searchsize == 0)
-            cout << endl;
+            log << "\n";
         }
-        cout << endl << endl;
+        log << "\n\n";
       }
     }
 
@@ -327,27 +93,22 @@ int main(int argc, char** argv) {
     {
       {
         lock_guard<mutex> lck(queue_lck);
-        /*shared_ptr<uint8_t>*/auto transfer = make_shared<uint8_t*>(new uint8_t(thread_blk_sz));
-        memcpy(transfer.get(), buffer + j, thread_blk_sz);
+        uint8_t* transfer = new uint8_t[thread_blk_sz];
+        memcpy(transfer, buffer + j, thread_blk_sz);
         //auto pos = i + j;
         block_queue.push_back({transfer, i+j});
       }
       queue_is_empty.notify_one();
     }
-    if (/*cmds.verbose && */(i % 10000000) < 100 )
+    if (/*cmds.verbose && */(i % 1000000) == 0 )
     {
       lock_guard<mutex> lck(queue_lck);
       screenObj.update_scan_counter(i - cmds.offset_start);
     }
   }
-  // ===============================================
 
 
-
-
-  // ========================================================
   // set finished state and wait for threads to finish search
-  // ========================================================
   readingIsDone = true;
   unique_lock<mutex> main_lck(main_finished_lock);
 
@@ -367,9 +128,6 @@ int main(int argc, char** argv) {
   input_file.close();
   output_file.close();
 
-  curs_set(1);
-  clear();
-  endwin();
   //print results to console
   printf("\n\nSUCCESS!\n\n");
 }
@@ -392,30 +150,54 @@ int main(int argc, char** argv) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /*=========------------=============
             OPEN IO FILES
  -------------======================*/
-void open_io_files(ifstream& input_file, ofstream& output_file, Cmd_Options& cmds) {
+void open_io_files(ifstream& input_file, ofstream& output_file, Cmd_Options& cmds, Logger& log) {
 
-  cout << "\n"
-       << "Trying to open input: " << cmds.input << endl;
+
+  log << "\nTrying to open input: " << cmds.input.c_str();
+
   input_file.open(cmds.input.c_str(), ios::in | ios::binary);
   if (input_file.fail()) {
-    fprintf(stderr, "\n>> Input file failed to open");
+    log << "\n>> Input file failed to open";
     exit(1);
   }
-  cout << "\n>> Input file opened: " << cmds.input << endl;
+  log << "\n>> Input file opened: " << cmds.input.c_str();
+
 
   cmds.output_file += cmds.output_folder;
   cmds.output_file += "/output.txt";
-  cout << "\n"
-       << "Trying to open output_file: " << cmds.output_file.c_str() << endl;
+  log << "\nTrying to open output_file: " << cmds.output_file.c_str();
+
   output_file.open(cmds.output_file.c_str());
   if (output_file.fail()) {
-    fprintf(stderr, "\n>> Output file failed to open");
+    log << "\n>> Output file failed to open";
     exit(1);
   }
-  cout << "\n>> Output file opened: " << cmds.output_file << endl;
+  log << "\n>> Output file opened: " << cmds.output_file.c_str();
 }
 
 
@@ -536,13 +318,14 @@ Cmd_Options get_cmd_options(int argc, char** argv) {
            SIGNAL HANDLER
  -------------======================*/
 void sig_handler(int signal_number) {
-  // terminate_early = 1;
+  clear();
+  curs_set(1);
+  delwin(screenObj.win);
+  endwin();
+  refresh();
+  system("clear");
+  exit(1);
 }
-
-
-
-
-
 
 /*=========------------=============
            	 SEARCH DISK
@@ -550,16 +333,25 @@ void sig_handler(int signal_number) {
 void search_disk(int thread_id, disk_pos blocksize,
                  int searchsize, bool verbose) {
 
+  Logger log;
+  {
+    lock_guard<mutex> lck{queue_lck};
+    log.LaunchLogWindow();
+  }
 
+
+  ostringstream oss{};
   if (verbose) {
-
     lock_guard<mutex> print_lck(queue_lck);
-    cout << endl;
-    cout << "Thread ID: "  << thread_id  << endl;
-    cout << "Blocksize: "  << blocksize  << endl;
-    cout << "Searchsize: " << searchsize << endl;
-    cout << "Verbose: "    << boolalpha  << verbose << endl;
-    cout << endl;
+
+
+    oss << "Thread ID: "  << thread_id
+        << "Blocksize: "  << blocksize
+        << "Searchsize: " << searchsize
+        << "Verbose: "    << boolalpha
+        << verbose        << endl;
+
+    log << oss.str().c_str();
   }
 
   int counter {0};
@@ -567,7 +359,7 @@ void search_disk(int thread_id, disk_pos blocksize,
   vector<uint8_t> pattern {0x49, 0x49, 0x2a, 0x00, 0x10,
                           0x00, 0x00, 0x00, 0x43, 0x52};
 
-  shared_ptr<uint8_t*> tmp;
+  uint8_t* tmp = nullptr;
   disk_pos block_location {};
 
   if (verbose)
@@ -578,8 +370,12 @@ void search_disk(int thread_id, disk_pos blocksize,
   for (;;) {
 
     if(verbose && block_queue.size() % 1000 == 0){
-      cout << "Thread #" << thread_id << ": Queue.size(): " <<
+      lock_guard<mutex> lck(queue_lck);
+      oss.str("");
+      oss << "Thread #" << thread_id << ": Queue.size(): " <<
             block_queue.size() << ", Block location: " <<block_location << endl;
+      log << oss.str().c_str();
+
     }
 
   	if (readingIsDone && block_queue.empty())
@@ -595,13 +391,11 @@ void search_disk(int thread_id, disk_pos blocksize,
         block_queue.pop_front();
       }
       if(verbose) {
-
-        cout << endl << endl;
-        cout << "Thread #" << thread_id << ": " << endl;
+        //fprintf(log, "\nThread #%d", thread_id);
 
         for (int c = 0; c < blocksize; ++c) {
-            cout << setw(2) << setfill('0') << hex
-                 << static_cast<unsigned short>(c);
+            //fprintf(log, "%02x", c);
+
 
             if (counter++ % searchsize == 0)
               cout << endl;
@@ -612,11 +406,11 @@ void search_disk(int thread_id, disk_pos blocksize,
 
 
     for (disk_pos pattern_counter {0}, i {0}; i < blocksize; ++i) {
-      if(pattern[pattern_counter] == *(tmp.get())[i]) {
+      if(pattern[pattern_counter] == tmp[i]) {
         if ((pattern_counter+1) == pattern.size()) {
           char preview[16];
           lock_guard<mutex> lock(print_lock);
-          memcpy(preview, (tmp.get()) + (i-pattern_counter), 16);
+          memcpy(preview, tmp + (i-pattern_counter), 16);
           block_matches[block_location + (i - pattern_counter)] = preview;
 
           screenObj.update_found_counter();
@@ -639,7 +433,7 @@ void search_disk(int thread_id, disk_pos blocksize,
       else
         pattern_counter = 0;
     }
-    //delete [] tmp;
+    delete [] tmp;
   }
 }
 
@@ -650,18 +444,20 @@ void search_disk(int thread_id, disk_pos blocksize,
 /*=========------------=============
           PRINT ALL OPTIONS
  -------------======================*/
-void Cmd_Options::print_all_options() {
-  cout << endl;
-  cout << "argc: " << argc << endl;
-  cout << "argv: " << argv << endl;
-  cout << "verbose: " << verbose << endl;
-  cout << "blocksize: " << blocksize << endl;
-  cout << "offset_start: " << offset_start << endl;
-  cout << "offset_end: " << offset_end << endl;
-  cout << "searchsize: " << searchsize << endl;
-  cout << "output_folder: " << output_folder << endl;
-  cout << "input: " << input << endl;
-  cout << "output_file: " << output_file << endl;
+void Cmd_Options::print_all_options(Logger& log) {
+  ostringstream oss;
+
+  oss << "\nargc: " << argc
+      << "\nargv: " << argv
+      << "\nverbose: " << verbose
+      << "\nblocksize: " << blocksize
+      << "\noffset_start: " << offset_start
+      << "\noffset_end: " << offset_end
+      << "\nsearchsize: " << searchsize
+      << "\noutput_folder: " << output_folder
+      << "\ninput: " << input
+      << "\noutput_file: " << output_file;
+  log << oss.str().c_str();
 }
 
 
@@ -754,11 +550,6 @@ void print_progress(){
 
       cout << CURSOR_L << progress_stream.str();
 }
-
-
-
-
-
 
 
 

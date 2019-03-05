@@ -3,7 +3,9 @@
         "*.c": "c",
         "stdio.h": "c",
         "iostream": "cpp",
-        "*.tcc": "cpp"
+        "*.tcc": "cpp",
+        "fstream": "cpp",
+        "ostream": "cpp"
     },
     "python.autoComplete.extraPaths": [
         "${env:SPARK_HOME}/python",
