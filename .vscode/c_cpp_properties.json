@@ -4,11 +4,11 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "/usr/include/c++/7",
                 "/usr/include/c++/7.3.0",
                 "/usr/include/x86_64-linux-gnu/c++/7",
-                "/usr/local/include/cdk",
-                "/usr/local/include"
+                "/usr/local/include",
+                "/usr/include",
+                "/usr/include/boost"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang++-6.0",

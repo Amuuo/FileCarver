@@ -33,6 +33,7 @@
 #include <dirent.h>
 #include <cstdio>
 #include <memory>
+#include <boost/format.hpp>
 
 
 using namespace std;
@@ -62,6 +63,9 @@ const char* REVERSE   = "[7m";
 const char* TOP_LEFT  = "[H";
 const char* CURSOR_S  = "[s";
 const char* CURSOR_L  = "[u";
+
+
+
 
 
 
@@ -170,26 +174,54 @@ struct ScreenObj {
 
   void init() {
 
+
+    title_art.push_back("                                   ");
+    title_art.push_back(" '||''''| '||' '||'      '||''''|  ");
+    title_art.push_back("  ||  .    ||   ||        ||  .    ");
+    title_art.push_back("  ||''|    ||   ||        ||''|    ");
+    title_art.push_back("  ||       ||   ||        ||       ");
+    title_art.push_back(" .||.     .||. .||.....| .||.....| ");
+    title_art.push_back("                                                              ");
+    title_art.push_back("   ..|'''.|     |     '||''|.   '||'  '|' '||''''|  '||''|.   ");
+    title_art.push_back(" .|'     '     |||     ||   ||   '|.  .'   ||  .     ||   ||  ");
+    title_art.push_back(" ||           |  ||    ||''|'     ||  |    ||''|     ||''|'   ");
+    title_art.push_back(" '|.      .  .''''|.   ||   |.     |||     ||        ||   |.  ");
+    title_art.push_back("   '|....'  .|.  .||. .||.  '|'     |     .||.....| .||.  '|' ");
+    title_art.push_back("                                                              ");
+
+
+
     win = initscr();
     // resizeterm(25, 50);
+
+    init_pair(2, COLOR_BLACK, COLOR_BLACK);
+
+
     clear();
+    start_color();
     curs_set(0);
     border(0,0,0,0,0,0,0,0);
     getmaxyx(win, row, col);
     screen_center_row = row / 3;
     screen_center_col = col / 2;
 
-    title_color = init_pair(1, COLOR_BLACK, COLOR_GREEN);
+    init_pair(1, COLOR_WHITE, COLOR_BLUE);
 
-    title = "F I L E  C A R V E R";
     attron(COLOR_PAIR(1));
-    print_centered_string(title, screen_center_row - 4);
+    for(int i = 0; i < title_art.size(); ++i){
+      oss << title_art[i];
+      print_centered_string((screen_center_row - 6) + i);
+    }
     attroff(COLOR_PAIR(1));
-    refresh_screen();
+    title_ending_row = getcury(win);
+    refresh();
   }
 
-
-  ~ScreenObj() { endwin(); }
+  ~ScreenObj() {
+    resetty();
+    clear();
+    endwin();
+  }
 
   int       title_color;
   int       x, y, row, col;
@@ -201,41 +233,46 @@ struct ScreenObj {
   WINDOW*   win;
   int       mb_size = 1024*1024;
   int       gb_size = 1024*1024*1024;
+  vector<string> title_art;
   ostringstream oss;
+  int       title_ending_row;
 
+  int half_len() {
 
-  int half_len(string& line) {
-
-    return line.size()/2;
+    return oss.str().size()/2;
   }
 
-  void print_centered_string(string line, int row) {
-    mvprintw(row, screen_center_col - half_len(line), "%s",
-              line.c_str(), NULL);
+  void print_centered_string(int row) {
+
+    mvprintw(row, screen_center_col - half_len(), "%s",
+              oss.str().c_str(), NULL);
     oss.str("");
   }
 
   void update_found_counter() {
+
     flash();
     ++file_counter;
     refresh_screen();
   }
 
   void update_scan_counter(disk_pos&& i) {
+
     blocks_scanned = i;
     refresh_screen();
   }
 
   void refresh_screen() {
-    oss << "Files found: " << to_string(file_counter);
-    print_centered_string(oss.str(), screen_center_row - 2);
-    oss.str("");
-    oss << "MB scanned: " << to_string(blocks_scanned/mb_size);
-    print_centered_string(oss.str(), screen_center_row);
-    oss.str("");
-    oss << "GB scanned: " << to_string(blocks_scanned/gb_size);
-    print_centered_string(oss.str(), screen_center_row+1);
-    oss.str("");
+
+    oss << "Files found: " << file_counter;
+    print_centered_string(title_ending_row +4);
+
+    oss << "MB scanned: " << blocks_scanned/mb_size;
+    print_centered_string(title_ending_row +6);
+
+    oss << "GB scanned: " << blocks_scanned/gb_size;
+    print_centered_string(title_ending_row+7);
+
     refresh();
   }
 };
@@ -246,60 +283,45 @@ struct ScreenObj {
 
 
 
-
-
-
-
-
-
-/*=========------------=============
-           GLOBAL VARIABLES
- -------------======================*/
-mutex                queue_lck{};
-mutex                queue_wait_lck{};
-mutex                print_lock{};
-mutex                main_finished_lock{};
-mutex                block_match_mtx{};
-mutex                progress_mtx{};
-condition_variable   queue_is_empty{};
-condition_variable   children_are_running{};
-condition_variable   progress_bar_cv{};
-atomic<bool>         readingIsDone{false};
-int                  terminate_early;
-int                  match_count{0};
-disk_pos*            file_pointer_position{nullptr};
-map<disk_pos, char*> block_matches{};
-disk_pos             offset_start{};
-disk_pos             offset_end{};
-deque<pair<uint8_t*,disk_pos>> block_queue{};
-disk_pos       filesize{0};
-
-int log_file_descriptor;
-int fd[2];
-//#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
-//#define CTRLD 5
-// char* menu_choices[]{"Continue", "New", "Settings", "More", "About", "Exit"};
-struct dirent64** dir_list;
-ScreenObj screenObj;
-
-
-
-
 /*=========------------=============
         FUNCTION DEFINITIONS
  -------------======================*/
 Cmd_Options get_cmd_options (int, char**);
 void open_io_files   (ifstream&, ofstream&, Cmd_Options&, Logger&);
 void sig_handler     (int signal_number);
-void search_disk     (int, disk_pos, int, bool);
+void search_disk     (int, disk_pos, bool);
 void print_results   (Cmd_Options&, ofstream&);
 string print_hexdump   (int, char*);
 void print_progress  ();
 void ncurses_testing ();
+string print_all_options(Logger&);
 
 
 
+extern mutex                print_lock;
+extern mutex                main_finished_lock;
+extern mutex                block_match_mtx;
+extern mutex                progress_mtx;
+extern mutex                main_wait_lock;
+extern condition_variable   children_are_running;
+extern condition_variable   progress_bar_cv;
+extern condition_variable   main_cv;
+extern atomic<bool>         readingIsDone;
+extern int                  terminate_early;
+extern int                  match_count;
+extern disk_pos*            file_pointer_position;
+extern map<disk_pos, char*> block_matches;
+extern disk_pos             offset_start;
+extern disk_pos             offset_end;
+extern disk_pos             filesize;
+extern const int            thread_array_size = 8;
+
+extern array<mutex,thread_array_size> queue_wait_lck;
+extern array<mutex,thread_array_size> queue_lck;
+extern array<condition_variable,thread_array_size> queue_is_empty;
+extern array<deque<pair<uint8_t*,disk_pos>>,thread_array_size> block_queue;
 
 
-
+extern ScreenObj screenObj;
+extern disk_pos main_loop_counter;
 
