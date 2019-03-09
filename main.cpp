@@ -38,6 +38,12 @@ disk_pos main_loop_counter;
 
 
 
+
+
+
+
+
+
 /*==============================
   ==============================
              M A I N
@@ -49,20 +55,23 @@ int main(int argc, char** argv) {
   setlocale(LC_NUMERIC, "");
 
 
-  signal(SIGINT, sig_handler);
+  signal(SIGINT , sig_handler);
   signal(SIGKILL, sig_handler);
   signal(SIGTERM, sig_handler);
   signal(SIGQUIT, sig_handler);
-  signal(SIGHUP, sig_handler);
+  signal(SIGHUP , sig_handler);
   signal(SIGABRT, sig_handler);
 
-
+  int tester;
+  cin >> tester;
 
   Logger log;
+#ifdef DEBUG
   log.LaunchLogWindow();
+#endif
 
 
-  Cmd_Options cmds{get_cmd_options(argc, argv)};
+  Cmd_Options cmds(argc, argv);
 
   array<std::thread, thread_array_size> thread_arr;
   ifstream input_file;
@@ -75,8 +84,6 @@ int main(int argc, char** argv) {
   open_io_files(input_file, output_file, cmds, log);
   uint8_t buffer[cmds.blocksize];
 
-  cmds.print_all_options(log);
-
   // launch search threads
   for (int j = 0; j < thread_array_size; ++j)
   {
@@ -87,6 +94,14 @@ int main(int argc, char** argv) {
   offset_end   = cmds.offset_end;
   screenObj.init();
 
+  screenObj.opts = cmds.print_all_options();
+
+  int starting_row = screenObj.title_ending_row + 9;
+  screenObj.print_str_vec();
+  box(screenObj.win, 0, 0);
+  refresh();
+  // screenObj.print_centered_string(screenObj.title_ending_row + 7,
+  //                                cmds.print_all_options());
 
   short thrd_pos;
   // read disk and push data chunks into block_queue
@@ -100,14 +115,16 @@ int main(int argc, char** argv) {
     {
       unique_lock<mutex> lck(main_wait_lock);
       main_cv.wait_for(lck, 5us, [thrd_pos]{return block_queue[thrd_pos].size() < 500;});
-      if(main_loop_counter%1000 == 0)
+#ifdef DEBUG
+    if(main_loop_counter%1000 == 0)
+    {
+      log << "\nQueue sizes: ";
+      for(int i = 0; i < thread_array_size; ++i)
       {
-        log << "\nQueue sizes: ";
-        for(int i = 0; i < thread_array_size; ++i)
-        {
-          log << to_string(block_queue[i].size()).c_str() << ", ";
-        }
+        log << to_string(block_queue[i].size()).c_str() << ", ";
       }
+    }
+#endif
     }
     int i = 0;
     for (disk_pos j = 0; j < cmds.blocksize; j += thread_blk_sz, ++i)
@@ -150,11 +167,58 @@ int main(int argc, char** argv) {
     output_file << endl;
   }
 
-  input_file.close();
   output_file.close();
+  write_carved_files(cmds.output_file, input_file);
+}
 
-  //print results to console
+
+
+
+
+
+
+
+
+
+
+
+
+
+void write_carved_files(string output_file, ifstream& input_file){
+
+  // write found file in output directory
+  ifstream file_markers{output_file};
+  string carved_files_folder_name = "/media/adam/The Vault/carved_files/";
+  mkdir(carved_files_folder_name.c_str(), O_RDWR);
+
+  int i = 0;
+
+  disk_pos file_mark;
+  disk_pos filesize = 1024 * 1024 * 35;
+  uint8_t file_buff[1024 * 1024 * 35];
+
+  string line;
+
+  while (!file_markers.eof()) {
+
+    getline(file_markers, line);
+    istringstream iss{line};
+    iss >> file_mark;
+
+    input_file.seekg(file_mark);
+
+    input_file.read((char*)file_buff, filesize);
+
+    ofstream carved_file{
+      string{carved_files_folder_name + to_string(i++) + ".cr2"}};
+
+    carved_file.write((char*)file_buff, filesize);
+  }
+
+  input_file.close();
+  // print results to console
   printf("\n\nSUCCESS!\n\n");
+
 }
 
 
@@ -184,121 +248,41 @@ int main(int argc, char** argv) {
 /*=========------------=============
             OPEN IO FILES
  -------------======================*/
-void open_io_files(ifstream& input_file, ofstream& output_file,
-                   Cmd_Options& cmds, Logger& log) {
-
-
+void open_io_files(ifstream & input_file, ofstream & output_file,
+                   Cmd_Options & cmds, Logger & log) {
+#ifdef DEBUG
   log << "\nTrying to open input: " << cmds.input.c_str();
-
+#endif
   input_file.open(cmds.input.c_str(), ios::in | ios::binary);
   if (input_file.fail())
   {
+#ifdef DEBUG
     log << "\n>> Input file failed to open";
+#endif
     exit(1);
   }
+#ifdef DEBUG
   log << "\n>> Input file opened: " << cmds.input.c_str();
-
+#endif
 
   cmds.output_file += cmds.output_folder;
   cmds.output_file += "/output.txt";
+#ifdef DEBUG
   log << "\nTrying to open output_file: " << cmds.output_file.c_str();
+#endif
 
   output_file.open(cmds.output_file.c_str());
   if (output_file.fail())
   {
+#ifdef DEBUG
     log << "\n>> Output file failed to open";
+#endif
     exit(1);
   }
+#ifdef DEBUG
   log << "\n>> Output file opened: " << cmds.output_file.c_str();
+#endif
 }
-
-
-
-
-
-
-
-
-
-/*=========------------=============
-           GET CMD OPTIONS
- -------------======================*/
-Cmd_Options get_cmd_options(int argc, char** argv) {
-
-  setlocale(LC_NUMERIC, "");
-
-  static struct option long_options[] =
-  {
-    {"blocksize",     required_argument, NULL, 'b'},
-    {"offset_start",  required_argument, NULL, 'S'},
-    {"offset_end",    required_argument, NULL, 'E'},
-    {"input",         required_argument, NULL, 'i'},
-    {"output_folder", required_argument, NULL, 'o'},
-    {"verbose",       no_argument,       NULL, 'v'},
-    {"help",          no_argument,       NULL, 'h'},
-    {NULL, 0, NULL, 0}
-  };
-
-  int           cmd_option;
-  extern char*  optarg;
-  Cmd_Options   cmds;
-
-  while ((cmd_option = getopt_long(argc, argv, "b:S:E:s:i:o:vh",
-                                   long_options, NULL)) != -1)
-  {
-    switch (cmd_option)
-    {
-      case 'b': cmds.blocksize     = atoll(optarg);  break;
-      case 'S': cmds.offset_start  = atoll(optarg);  break;
-      case 'E': cmds.offset_end    = atoll(optarg);  break;
-      case 'i': cmds.input         = string{optarg}; break;
-      case 'o': cmds.output_folder = string{optarg}; break;
-      case 'v': cmds.verbose       = true;           break;
-
-      case 'h':
-        printf (
-        "\n\t--blocksize      -b  <size of logical blocks in bytes>"
-        "\n\t--offset_start   -S  <offset from start of disk in bytes>"
-        "\n\t--offset_end     -E  <offset from start of disk in bytes>"
-        "\n\t--input          -i  <file to use for header search>"
-        "\n\t--output_folder  -o  <folder to use for output files>"
-        "\n\t--verbose        -v  <display verbose output of ongoing process>"
-        "\n\t--help           -h  <print help options>\n\n"
-        );
-
-        exit(0);
-
-      default: break;
-    }
-  }
-
-  if (cmds.output_folder == "")
-  {
-    char tmp_output_folder[50];
-    if (!(getcwd(tmp_output_folder, 50)))
-      printf("\nCould not retrieve directory with 'getcwd'");
-    cmds.output_folder = string{tmp_output_folder};
-  }
-
-  if (cmds.offset_end == 0)
-  {
-    printf("\n>> No offset end detected, setting offset to end of file");
-    FILE* file_size_stream = fopen(cmds.input.c_str(), "r");
-    fseek(file_size_stream, 0, SEEK_END);
-    cmds.offset_end = ftell(file_size_stream);
-    fclose(file_size_stream);
-  }
-
-  long long filesize = cmds.offset_end - cmds.offset_start;
-
-  if (cmds.input == "")
-  {
-    printf("\n>> Input file required");
-    exit(1);
-  }
-  return cmds;
-}
-
 
 
 
@@ -311,6 +295,20 @@ Cmd_Options get_cmd_options(int argc, char** argv) {
  -------------======================*/
 void sig_handler(int signal_number) {
 
+  ofstream quit_stream{"abort_data.txt"};
+
+  for(auto& match : block_matches)
+  {
+    quit_stream << match.first << " || ";
+    for (int i = 0; i < 16; ++i)
+    {
+     quit_stream << (*(match.second + i) > 33 && *(match.second + i) <
+              127 ? *(match.second + i) : '.');
+    }
+    quit_stream << endl;
+  }
+
+  quit_stream.close();
   clear();
   curs_set(1);
   delwin(screenObj.win);
@@ -320,17 +318,27 @@ void sig_handler(int signal_number) {
   exit(0);
 }
 
+
+
+
+
+
+
+
+
 /*=========------------=============
            	 SEARCH DISK
  -------------======================*/
 void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
 
+#ifdef DEBUG
   Logger log;
   {
     lock_guard<mutex> lck{print_lock};
     log.LaunchLogWindow();
     log << "\nThread #" << to_string(thread_id).c_str();
   }
+#endif
 
   vector<uint8_t> pattern {0x49, 0x49, 0x2a, 0x00, 0x10,
                            0x00, 0x00, 0x00, 0x43, 0x52};
@@ -367,8 +375,11 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
 
           screenObj.update_found_counter();
 
+#ifdef DEBUG
           log << "\nFOUND: " << print_hexdump(16, preview).c_str();
-          log << "\n\tQueue.size(): " << to_string(block_queue[thread_id].size()).c_str();
+          log << "\n\tQueue.size(): " << to_string(block_queue[thread_id].size()).c_str()
+              << ", Disk Marker: " << to_string(main_loop_counter).c_str();
+#endif
 
         } else pattern_counter++;
       } else pattern_counter = 0;
@@ -378,27 +389,6 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
 
 
 
-
-
-/*=========------------=============
-          PRINT ALL OPTIONS
- -------------======================*/
-string Cmd_Options::print_all_options(Logger& log) {
-
-  ostringstream oss;
-
-  oss << "\nargc: "          << argc
-      << "\nargv: "          << argv
-      << "\nverbose: "       << verbose
-      << "\nblocksize: "     << blocksize
-      << "\noffset_start: "  << offset_start
-      << "\noffset_end: "    << offset_end
-      << "\noutput_folder: " << output_folder
-      << "\ninput: "         << input
-      << "\noutput_file: "   << output_file;
-
-  log << oss.str();
-}
 
 
 
@@ -423,6 +413,11 @@ void print_results(Cmd_Options& cmds, ofstream& output_file){
     output_file << match.first << ": " << match.second << endl;
 
 }
+
+
+
+
+
 
 
 
