@@ -65,13 +65,17 @@ int main(int argc, char** argv) {
   int tester;
   cin >> tester;
 
-  Logger log;
-#ifdef DEBUG
-  log.LaunchLogWindow();
-#endif
-
-
   Cmd_Options cmds(argc, argv);
+
+
+
+  Logger log;
+
+  #ifdef DEBUG
+    log.LaunchLogWindow();
+  #endif
+
+
 
   array<std::thread, thread_array_size> thread_arr;
   ifstream input_file;
@@ -302,7 +306,7 @@ void sig_handler(int signal_number) {
     quit_stream << match.first << " || ";
     for (int i = 0; i < 16; ++i)
     {
-     quit_stream << (*(match.second + i) > 33 && *(match.second + i) <
+      quit_stream << (*(match.second + i) > 33 && *(match.second + i) <
               127 ? *(match.second + i) : '.');
     }
     quit_stream << endl;

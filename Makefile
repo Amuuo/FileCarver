@@ -1,9 +1,9 @@
 DEBUG ?= 1
 
 ifeq ($(DEBUG), 1)
-	CFLAGS=-ggdb -DDEBUG -lpthread -lncurses
+	CFLAGS=-ggdb -DDEBUG -lpthread -lform -lncurses
 else
-	CFLAGS=-lpthread -lncurses
+	CFLAGS=-lpthread -lform -lncurses
 endif
 
 

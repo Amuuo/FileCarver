@@ -36,7 +36,7 @@
 #include <cstdio>
 #include <memory>
 #include <boost/format.hpp>
-
+#include <form.h>
 
 using namespace std;
 typedef unsigned long long disk_pos;
@@ -64,5 +64,5 @@ struct Cmd_Options {
   bool      verbose       {false};
 
   vector<string> print_all_options();
+  void startup_screen();
 };
-
