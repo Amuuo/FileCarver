@@ -32,8 +32,8 @@ void ScreenObj::init() {
     screen_center_row = row / 3;
     screen_center_col = col / 2;
 
-    init_pair(1, COLOR_WHITE, COLOR_BLUE);
-    init_pair(2, COLOR_WHITE, COLOR_BLUE);
+    init_pair(1, COLOR_WHITE, COLOR_RED);
+    init_pair(2, COLOR_WHITE, COLOR_WHITE);
     init_pair(3, COLOR_BLACK, COLOR_GREEN);
     init_pair(4, COLOR_BLACK, COLOR_YELLOW);
 
@@ -111,9 +111,9 @@ void ScreenObj::print_centered_string(int row, string& line){
 
 void ScreenObj::update_found_counter() {
 
-    flash();
-    ++file_counter;
-    refresh_screen();
+  flash();
+  ++file_counter;
+  refresh_screen();
 }
 
 

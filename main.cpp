@@ -18,7 +18,7 @@ map<disk_pos, char*> block_matches{};
 disk_pos             offset_start{};
 disk_pos             offset_end{};
 disk_pos             filesize{0};
-//const int            thread_array_size = 7;
+//const int            thread_array_size = 6;
 
 array<mutex,thread_array_size> queue_wait_lck{};
 array<mutex,thread_array_size> queue_lck{};
@@ -139,6 +139,10 @@ int main(int argc, char** argv) {
       uint8_t* transfer = new uint8_t[thread_blk_sz];
       memcpy(transfer, buffer + j, thread_blk_sz);
       {
+        unique_lock<mutex> main_lck(main_wait_lock);
+        main_cv.wait_for(main_lck, 1s,
+                         [] { return block_queue[0].size() < 10000; });
+
         lock_guard<mutex> lck(queue_lck[i]);
         block_queue[i].push_back({transfer, main_loop_counter+j});
       }
@@ -187,7 +191,7 @@ int main(int argc, char** argv) {
 
 
 
-void write_carved_files(string output_file, ifstream& input_file){
+inline void write_carved_files(string output_file, ifstream& input_file){
 
   // write found file in output directory
   ifstream file_markers{output_file};
@@ -251,7 +255,7 @@ void write_carved_files(string output_file, ifstream& input_file){
 /*=========------------=============
             OPEN IO FILES
  -------------======================*/
-void open_io_files(ifstream & input_file, ofstream & output_file,
+inline void open_io_files(ifstream & input_file, ofstream & output_file,
                    Cmd_Options & cmds, Logger & log) {
 #ifdef DEBUG
   log << "\nTrying to open input: " << cmds.input.c_str();
@@ -342,11 +346,12 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
     log << "\nThread #" << to_string(thread_id).c_str();
   }
 #endif
-
-  vector<uint8_t> pattern {0x49, 0x49, 0x2a, 0x00, 0x10,
-                           0x00, 0x00, 0x00, 0x43, 0x52};
+  //vector<uint8_t> pattern{0xff, 0xd8, 0xff};
+  vector<uint8_t> pattern{0x49, 0x49, 0x2a, 0x00, 0x10,
+                          0x00, 0x00, 0x00, 0x43, 0x52};
   uint8_t* tmp = nullptr;
   disk_pos block_location {};
+  disk_pos minimum_file_size = 1000000;
   this_thread::sleep_for(2s);
 
   for (;;)
@@ -380,6 +385,8 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
           screenObj.print_latest_find(
               (boost::format("%s %s") % to_string(main_loop_counter).c_str() %
                print_hexdump(16, preview).c_str()).str());
+
+          i += minimum_file_size;
 
 #ifdef DEBUG
           log << "\nFOUND: " << print_hexdump(16, preview).c_str();
@@ -432,7 +439,7 @@ void print_results(Cmd_Options& cmds, ofstream& output_file){
 /*=========------------=============
            	PRINT HEXDUMP
  -------------======================*/
-string print_hexdump(int line_size, char* tmp) {
+inline string print_hexdump(int line_size, char* tmp) {
 
   ostringstream oss;
   using namespace boost;
@@ -471,8 +478,10 @@ void progress_bar_thread(disk_pos offset_start, disk_pos filesize) {
     {
       this_thread::sleep_for(500ms);
       lock_guard<mutex> lck(print_lock);
+      //if (block_queue[0].size() < 100000) main_cv.notify_one();
       screenObj.progress_counter =
-          (static_cast<long double>(main_loop_counter - offset_start) / filesize);
+          (static_cast<long double>(main_loop_counter - offset_start) /
+           filesize);
       screenObj.refresh_progress_bar();
     }
   }
