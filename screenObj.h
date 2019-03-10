@@ -60,6 +60,8 @@ struct ScreenObj {
   void update_found_counter();
   void update_scan_counter(disk_pos&& i);
   void refresh_screen();
+  void refresh_progress_bar();
+  void print_latest_find(string);
 
   int            title_color;
   int            x, y, row, col;
@@ -76,5 +78,7 @@ struct ScreenObj {
   int            title_ending_row;
   int            last_pos;
   vector<string> opts;
+  long double         progress_counter{0.0f};
+  long double         title_width;
 
 };

@@ -62,6 +62,7 @@ struct Cmd_Options {
   int       searchsize    {0};
   char**    argv          {nullptr};
   bool      verbose       {false};
+  long long filesize      {0};
 
   vector<string> print_all_options();
   void startup_screen();

@@ -121,7 +121,7 @@ Cmd_Options::Cmd_Options(int argc, char** argv) {
     fclose(file_size_stream);
   }
 
-  long long filesize = offset_end - offset_start;
+  filesize = offset_end - offset_start;
 
   if (input == "")
   {

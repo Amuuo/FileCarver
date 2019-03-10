@@ -57,6 +57,7 @@ string print_hexdump   (int, char*);
 void print_progress  ();
 void ncurses_testing ();
 void write_carved_files(string, ifstream&);
+void progress_bar_thread(disk_pos, disk_pos);
 
 extern mutex                print_lock;
 extern mutex                main_finished_lock;

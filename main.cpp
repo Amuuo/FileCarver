@@ -107,6 +107,9 @@ int main(int argc, char** argv) {
   // screenObj.print_centered_string(screenObj.title_ending_row + 7,
   //                                cmds.print_all_options());
 
+  thread progress_bar{&progress_bar_thread, cmds.offset_start, cmds.filesize};
+  progress_bar.detach();
+
   short thrd_pos;
   // read disk and push data chunks into block_queue
   for (main_loop_counter =  cmds.offset_start;
@@ -142,11 +145,6 @@ int main(int argc, char** argv) {
       if(block_queue[i].size() > 500)
         queue_is_empty[i].notify_one();
     }
-    if ((main_loop_counter % 10000) == 0 )
-    {
-      lock_guard<mutex> lck(print_lock);
-      screenObj.update_scan_counter(main_loop_counter - cmds.offset_start);
-    }
   }
 
 
@@ -172,7 +170,8 @@ int main(int argc, char** argv) {
   }
 
   output_file.close();
-  write_carved_files(cmds.output_file, input_file);
+  if(!block_matches.empty())
+    write_carved_files(cmds.output_file, input_file);
 }
 
 
@@ -378,6 +377,9 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
           block_matches[block_location + (i - pattern_counter)] = preview;
 
           screenObj.update_found_counter();
+          screenObj.print_latest_find(
+              (boost::format("%s %s") % to_string(main_loop_counter).c_str() %
+               print_hexdump(16, preview).c_str()).str());
 
 #ifdef DEBUG
           log << "\nFOUND: " << print_hexdump(16, preview).c_str();
@@ -452,3 +454,26 @@ string print_hexdump(int line_size, char* tmp) {
   oss << "|";
   return oss.str();
 };
+
+
+
+
+
+
+
+/*=========------------=============
+         PROGRESS BAR THREAD
+ -------------======================*/
+void progress_bar_thread(disk_pos offset_start, disk_pos filesize) {
+
+  while (!readingIsDone)
+  {
+    {
+      this_thread::sleep_for(500ms);
+      lock_guard<mutex> lck(print_lock);
+      screenObj.progress_counter =
+          (static_cast<long double>(main_loop_counter - offset_start) / filesize);
+      screenObj.refresh_progress_bar();
+    }
+  }
+}
