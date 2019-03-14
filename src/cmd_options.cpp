@@ -146,7 +146,7 @@ Cmd_Options::Cmd_Options(int argc, char** argv) {
 /*=========------------=============
           PRINT ALL OPTIONS
  -------------======================*/
-vector<string> Cmd_Options::print_all_options() {
+inline vector<string> Cmd_Options::print_all_options() {
 
   vector<string> str_vect;
 
@@ -260,23 +260,26 @@ void Cmd_Options::startup_screen(){
   set_label(INSTRUCTION_1,      "(KEY_LEFT to clear field)");
   set_label(INSTRUCTION_2,      "(F1 to submit)");
 
-  set_field(PATH_TO_DISK_LABEL, "Path To Disk (input source)", "/dev/sdc1\0", PATH_TO_DISK);
-  set_field(OFFSET_START_LABEL, "Offset Start (in Bytes)",     "0",          OFFSET_START);
-  set_field(OFFSET_END_LABEL,   "Offset End (in Bytes)",       "0",          OFFSET_END);
-  set_field(BLOCKSIZE_LABEL,    "Offset End (in Bytes)",       "32768",     BLOCKSIZE);
+  set_field(PATH_TO_DISK_LABEL, "Path To Disk (input source)", "/dev/sdc1\0",
+            PATH_TO_DISK);
+  set_field(OFFSET_START_LABEL, "Offset Start (in Bytes)", "0", OFFSET_START);
+  set_field(OFFSET_END_LABEL, "Offset End (in Bytes)", "0", OFFSET_END);
+  set_field(BLOCKSIZE_LABEL, "Offset End (in Bytes)", "32768", BLOCKSIZE);
 
 
 
   my_form = new_form(field);
   scale_form(my_form, &rows, &cols);
-  my_form_win = newwin(rows+5, cols+5, (LINES/2)-((rows+5)/2), (COLS/2)-((cols+5)/2));
+  my_form_win = newwin(rows + 5, cols + 5, (LINES / 2) - ((rows + 5) / 2),
+                       (COLS / 2) - ((cols + 5) / 2));
   keypad(my_form_win, TRUE);
   set_form_win(my_form, my_form_win);
   set_form_sub(my_form, derwin(my_form_win, rows, cols, 2, 2));
 
   box(stdscr, 0, 0);
   box(my_form_win, 0, 0);
-  print_in_middle(my_form_win, 0, 1, cols + 4, " C A R V E  O P T I O N S ", COLOR_PAIR(1));
+  print_in_middle(my_form_win, 0, 1, cols + 4, " C A R V E  O P T I O N S ",
+                  COLOR_PAIR(1));
 
   post_form(my_form);
   wrefresh(my_form_win);
