@@ -40,13 +40,13 @@ void ScreenObj::init() {
     attron(COLOR_PAIR(1) | A_BOLD);
     for(int i = 0; i < title_art.size(); ++i){
         oss << title_art[i];
-        print_centered_string((screen_center_row - 6) + i);
+        print_centered_string((screen_center_row - 10) + i);
     }
     attroff(COLOR_PAIR(1) | A_BOLD);
     title_ending_row = getcury(win);
     refresh_screen();
     attron(COLOR_PAIR(2));
-    mvprintw(title_ending_row + 4,
+    mvprintw(title_ending_row + 6,
              screen_center_col - (static_cast<int>(title_width / 2)),
              string(static_cast<int>(title_width), ' ').c_str());
     attroff(COLOR_PAIR(2));
@@ -133,7 +133,7 @@ void ScreenObj::update_scan_counter(disk_pos&& i) {
 void ScreenObj::refresh_screen() {
     attron(COLOR_PAIR(3) | A_BOLD);
     oss << " Files found: " << file_counter << " ";
-    print_centered_string(title_ending_row +7);
+    print_centered_string(title_ending_row +4);
     attroff(COLOR_PAIR(3) | A_BOLD);
 
     refresh();
@@ -147,13 +147,13 @@ void ScreenObj::refresh_progress_bar() {
 
   attron(COLOR_PAIR(3));
   mvprintw(
-      title_ending_row + 4,
+      title_ending_row + 6,
       screen_center_col - (static_cast<int>(title_width / 2)),
       string(static_cast<int>(title_width * progress_counter), ' ').c_str());
   attroff(COLOR_PAIR(3));
 
   oss << (boost::format("%-3.2f%%") % (progress_counter * 100.0f)).str();
 
-  print_centered_string(title_ending_row + 5);
+  print_centered_string(title_ending_row + 7);
   refresh();
 }

@@ -146,7 +146,7 @@ Cmd_Options::Cmd_Options(int argc, char** argv) {
 /*=========------------=============
           PRINT ALL OPTIONS
  -------------======================*/
-inline vector<string> Cmd_Options::print_all_options() {
+vector<string> Cmd_Options::print_all_options() {
 
   vector<string> str_vect;
 

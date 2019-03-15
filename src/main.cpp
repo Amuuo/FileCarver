@@ -376,7 +376,7 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
       {
         if ((pattern_counter+1) == pattern.size())
         {
-          char preview[16];
+          uint8_t preview[16];
           lock_guard<mutex> lock(print_lock);
           memcpy(preview, tmp + (i-pattern_counter), 16);
           block_matches[block_location + (i - pattern_counter)] = preview;
@@ -439,7 +439,7 @@ void print_results(Cmd_Options& cmds, ofstream& output_file){
 /*=========------------=============
            	PRINT HEXDUMP
  -------------======================*/
-inline string print_hexdump(int line_size, char* tmp) {
+inline string print_hexdump(int line_size, uint8_t* tmp) {
 
   ostringstream oss;
   using namespace boost;
@@ -447,7 +447,7 @@ inline string print_hexdump(int line_size, char* tmp) {
   int j = 0;
 
   for (int i = 0; i < line_size; ++i) {
-    oss << format("%02x ") % (unsigned short)(tmp[j+i]);
+    oss << format("%02x ") % (short)(tmp[j+i]);
     //oss << setw(2) << setfill('0') << hex <<
     //        static_cast<unsigned short>(tmp[j + i]) << " ";
   }
