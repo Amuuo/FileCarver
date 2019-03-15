@@ -235,18 +235,19 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
 
   for (;;)
   {
+    if(block_queue[thread_id].empty())
     {
-      if(block_queue[thread_id].empty())
-      {
-        unique_lock<mutex> lck(queue_wait_lck[thread_id]);
-        queue_is_empty[thread_id].wait(lck, [&, thread_id]
-                                { return !block_queue[thread_id].empty(); });
-      }
+      unique_lock<mutex> lck(queue_wait_lck[thread_id]);
+      queue_is_empty[thread_id].wait(lck, [&, thread_id]
+                              { return !block_queue[thread_id].empty(); });
+    }
+    {
       lock_guard<mutex> q_lck(queue_lck[thread_id]);
       tmp = block_queue[thread_id].front().first;
       block_location = block_queue[thread_id].front().second;
       block_queue[thread_id].pop_front();
     }
+
 
     // header search algorithm
     for (disk_pos pattern_counter = 0, i = 0; i < blocksize; ++i)
@@ -288,15 +289,13 @@ void progress_bar_thread(disk_pos offset_start, disk_pos filesize) {
 
   while (!readingIsDone)
   {
-    {
-      this_thread::sleep_for(500ms);
-      lock_guard<mutex> lck(print_lock);
-      //if (block_queue[0].size() < 100000) main_cv.notify_one();
-      screenObj.progress_counter =
-          (static_cast<long double>(main_counter - offset_start) /
-           filesize);
-      screenObj.refresh_progress_bar();
-    }
+    this_thread::sleep_for(500ms);
+    lock_guard<mutex> lck(print_lock);
+    //if (block_queue[0].size() < 100000) main_cv.notify_one();
+    screenObj.progress_counter =
+        (static_cast<long double>(main_counter - offset_start) /
+          filesize);
+    screenObj.refresh_progress_bar();
   }
 }
 
