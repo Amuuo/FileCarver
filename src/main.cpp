@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
       queue_is_empty[i].notify_one();
     }
   }
-  /**************************************************/
+  /**************  M A I N  L O O P  *****************/
 
 
 
@@ -164,11 +164,6 @@ int main(int argc, char** argv) {
   if (!block_matches.empty())
     write_carved_files(cmds.output_file, input_file);
 }
-/*
-==========================================================
-==========================================================
-*/
-
 
 
 
