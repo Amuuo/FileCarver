@@ -14,7 +14,7 @@ atomic<bool>         readingIsDone{false};
 int                  terminate_early;
 int                  match_count{0};
 disk_pos*            file_pointer_position{nullptr};
-map<disk_pos, char*> block_matches{};
+map<disk_pos, uint8_t*> block_matches{};
 disk_pos             offset_start{};
 disk_pos             offset_end{};
 disk_pos             filesize{0};
@@ -25,7 +25,7 @@ array<mutex,thread_array_size> queue_lck{};
 array<condition_variable,thread_array_size> queue_is_empty{};
 array<deque<pair<uint8_t*,disk_pos>>,thread_array_size> block_queue{};
 
-
+int input_fd;
 ScreenObj screenObj;
 disk_pos main_loop_counter;
 
@@ -83,10 +83,15 @@ int main(int argc, char** argv) {
   ofstream header_file;
 
 
+
+
   disk_pos thread_blk_sz = (cmds.blocksize / thread_array_size);
 
   open_io_files(input_file, output_file, cmds, log);
+
   uint8_t buffer[cmds.blocksize];
+
+
 
   // launch search threads
   for (int j = 0; j < thread_array_size; ++j)
@@ -106,6 +111,12 @@ int main(int argc, char** argv) {
   refresh();
   // screenObj.print_centered_string(screenObj.title_ending_row + 7,
   //                                cmds.print_all_options());
+  uint8_t* buffers[thread_array_size];
+  struct iovec _iovec[thread_array_size];
+
+  for (int i = 0; i < thread_array_size; ++i)
+    _iovec[i].iov_len = thread_blk_sz;
+
 
   thread progress_bar{&progress_bar_thread, cmds.offset_start, cmds.filesize};
   progress_bar.detach();
@@ -116,8 +127,16 @@ int main(int argc, char** argv) {
        main_loop_counter <  cmds.offset_end;
        main_loop_counter += cmds.blocksize)
   {
-    input_file.seekg(main_loop_counter);
-    input_file.read((char*)buffer, cmds.blocksize);
+
+
+    for (int i = 0; i < thread_array_size; ++i) {
+      buffers[i] = new uint8_t[thread_blk_sz];
+      _iovec[i].iov_base = buffers[i];
+    }
+    preadv(input_fd, _iovec, thread_array_size, main_loop_counter);
+
+    //input_file.seekg(main_loop_counter);
+    //input_file.read((char*)buffer, cmds.blocksize);
     thrd_pos = main_loop_counter%thread_array_size;
     {
       unique_lock<mutex> lck(main_wait_lock);
@@ -136,15 +155,15 @@ int main(int argc, char** argv) {
     int i = 0;
     for (disk_pos j = 0; j < cmds.blocksize; j += thread_blk_sz, ++i)
     {
-      uint8_t* transfer = new uint8_t[thread_blk_sz];
-      memcpy(transfer, buffer + j, thread_blk_sz);
+      //uint8_t* transfer = new uint8_t[thread_blk_sz];
+      //memcpy(transfer, _iovec[i].iov_base, thread_blk_sz);
       {
         unique_lock<mutex> main_lck(main_wait_lock);
         main_cv.wait_for(main_lck, 1s,
                          [] { return block_queue[0].size() < 10000; });
 
         lock_guard<mutex> lck(queue_lck[i]);
-        block_queue[i].push_back({transfer, main_loop_counter+j});
+        block_queue[i].push_back({buffers[i], main_loop_counter+j});
       }
       if(block_queue[i].size() > 500)
         queue_is_empty[i].notify_one();
@@ -174,7 +193,7 @@ int main(int argc, char** argv) {
   }
 
   output_file.close();
-  if(!block_matches.empty())
+  if (!block_matches.empty())
     write_carved_files(cmds.output_file, input_file);
 }
 
@@ -260,6 +279,8 @@ inline void open_io_files(ifstream & input_file, ofstream & output_file,
 #ifdef DEBUG
   log << "\nTrying to open input: " << cmds.input.c_str();
 #endif
+  input_fd = open(cmds.input.c_str(), O_RDONLY);
+/*
   input_file.open(cmds.input.c_str(), ios::in | ios::binary);
   if (input_file.fail())
   {
@@ -268,6 +289,7 @@ inline void open_io_files(ifstream & input_file, ofstream & output_file,
 #endif
     exit(1);
   }
+*/
 #ifdef DEBUG
   log << "\n>> Input file opened: " << cmds.input.c_str();
 #endif
@@ -370,7 +392,7 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
     }
 
     // header search algorithm
-    for (disk_pos pattern_counter {0}, i {0}; i < blocksize; ++i)
+    for (disk_pos pattern_counter = 0, i = 0; i < blocksize; ++i)
     {
       if(pattern[pattern_counter] == tmp[i])
       {
@@ -383,7 +405,7 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
 
           screenObj.update_found_counter();
           screenObj.print_latest_find(
-              (boost::format("%s %s") % to_string(main_loop_counter).c_str() %
+              (boost::format("%s -- %s") % to_string(main_loop_counter).c_str() %
                print_hexdump(16, preview).c_str()).str());
 
           i += minimum_file_size;
@@ -447,6 +469,9 @@ inline string print_hexdump(int line_size, uint8_t* tmp) {
   int j = 0;
 
   for (int i = 0; i < line_size; ++i) {
+    if (i % (line_size/2) == 0){
+      oss << " ";
+    }
     oss << format("%02x ") % (short)(tmp[j+i]);
     //oss << setw(2) << setfill('0') << hex <<
     //        static_cast<unsigned short>(tmp[j + i]) << " ";
@@ -455,8 +480,7 @@ inline string print_hexdump(int line_size, uint8_t* tmp) {
   oss << "  |";
 
   for (int i = 0; i < line_size; ++i)
-
-    oss << (tmp[j + i] > 33 && tmp[j + i] < 127 ? (char)(tmp[j+i]) : '.');
+    oss << (isascii((int)tmp[j+i]) ? (char)(tmp[j+i]) : '.');
 
   oss << "|";
   return oss.str();

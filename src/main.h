@@ -34,6 +34,8 @@
 #include <cstdio>
 #include <memory>
 #include <boost/format.hpp>
+#include <sys/uio.h>
+#include <ctype.h>
 #include "cmd_options.h"
 #include "logger.h"
 #include "screenObj.h"
@@ -53,7 +55,7 @@ void open_io_files   (ifstream&, ofstream&, Cmd_Options&, Logger&);
 void sig_handler     (int signal_number);
 void search_disk     (int, disk_pos, bool);
 void print_results   (Cmd_Options&, ofstream&);
-string print_hexdump   (int, char*);
+string print_hexdump   (int, uint8_t*);
 void print_progress  ();
 void ncurses_testing ();
 void write_carved_files(string, ifstream&);
@@ -71,7 +73,7 @@ extern atomic<bool>         readingIsDone;
 extern int                  terminate_early;
 extern int                  match_count;
 extern disk_pos*            file_pointer_position;
-extern map<disk_pos, char*> block_matches;
+extern map<disk_pos, uint8_t*> block_matches;
 extern disk_pos             offset_start;
 extern disk_pos             offset_end;
 extern disk_pos             filesize;
