@@ -27,7 +27,7 @@ array<deque<pair<uint8_t*,disk_pos>>,thread_array_size> block_queue{};
 
 int input_fd;
 ScreenObj screenObj;
-disk_pos main_loop_counter;
+disk_pos main_counter;
 
 
 
@@ -37,18 +37,11 @@ disk_pos main_loop_counter;
 
 
 
-
-
-
-
-
-
-
-/*==============================
-  ==============================
-             M A I N
-  ==============================
-  ==============================
+/*==========================================================
+  ==========================================================
+                          M A I N
+  ==========================================================
+  ==========================================================
  */
 int main(int argc, char** argv) {
 
@@ -81,23 +74,16 @@ int main(int argc, char** argv) {
   ifstream input_file;
   ofstream output_file;
   ofstream header_file;
-
-
-
-
   disk_pos thread_blk_sz = (cmds.blocksize / thread_array_size);
 
   open_io_files(input_file, output_file, cmds, log);
-
-  uint8_t buffer[cmds.blocksize];
 
 
 
   // launch search threads
   for (int j = 0; j < thread_array_size; ++j)
-  {
     thread_arr[j] = thread{&search_disk, j, thread_blk_sz, cmds.verbose};
-  }
+
 
   offset_start = cmds.offset_start;
   offset_end   = cmds.offset_end;
@@ -109,8 +95,7 @@ int main(int argc, char** argv) {
   screenObj.print_str_vec();
   box(screenObj.win, 0, 0);
   refresh();
-  // screenObj.print_centered_string(screenObj.title_ending_row + 7,
-  //                                cmds.print_all_options());
+
   uint8_t* buffers[thread_array_size];
   struct iovec _iovec[thread_array_size];
 
@@ -121,54 +106,37 @@ int main(int argc, char** argv) {
   thread progress_bar{&progress_bar_thread, cmds.offset_start, cmds.filesize};
   progress_bar.detach();
 
-  short thrd_pos;
-  // read disk and push data chunks into block_queue
-  for (main_loop_counter =  cmds.offset_start;
-       main_loop_counter <  cmds.offset_end;
-       main_loop_counter += cmds.blocksize)
+  main_counter = cmds.offset_start;
+
+
+
+  /**************  M A I N  L O O P  *****************/
+  /* read disk and push data chunks into block_queue */
+  for (; main_counter <  cmds.offset_end; main_counter += cmds.blocksize)
   {
-
-
-    for (int i = 0; i < thread_array_size; ++i) {
+    for (int i = 0; i < thread_array_size; ++i)
+    {
       buffers[i] = new uint8_t[thread_blk_sz];
       _iovec[i].iov_base = buffers[i];
     }
-    preadv(input_fd, _iovec, thread_array_size, main_loop_counter);
+    preadv(input_fd, _iovec, thread_array_size, main_counter);
 
-    //input_file.seekg(main_loop_counter);
-    //input_file.read((char*)buffer, cmds.blocksize);
-    thrd_pos = main_loop_counter%thread_array_size;
-    {
-      unique_lock<mutex> lck(main_wait_lock);
-      main_cv.wait_for(
-          lck, 5us, [thrd_pos] { return block_queue[thrd_pos].size() < 500; });
-
-#ifdef DEBUG
-      if (main_loop_counter % 1000 == 0) {
-        log << "\nQueue sizes: ";
-        for (int i = 0; i < thread_array_size; ++i) {
-          log << to_string(block_queue[i].size()).c_str() << ", ";
-        }
-      }
-#endif
-    }
     int i = 0;
     for (disk_pos j = 0; j < cmds.blocksize; j += thread_blk_sz, ++i)
     {
-      //uint8_t* transfer = new uint8_t[thread_blk_sz];
-      //memcpy(transfer, _iovec[i].iov_base, thread_blk_sz);
       {
         unique_lock<mutex> main_lck(main_wait_lock);
         main_cv.wait_for(main_lck, 1s,
                          [] { return block_queue[0].size() < 10000; });
 
         lock_guard<mutex> lck(queue_lck[i]);
-        block_queue[i].push_back({buffers[i], main_loop_counter+j});
+        block_queue[i].push_back({buffers[i], main_counter+j});
       }
-      if(block_queue[i].size() > 500)
-        queue_is_empty[i].notify_one();
+      queue_is_empty[i].notify_one();
     }
   }
+  /**************************************************/
+
 
 
 
@@ -196,84 +164,18 @@ int main(int argc, char** argv) {
   if (!block_matches.empty())
     write_carved_files(cmds.output_file, input_file);
 }
+/*
+==========================================================
+==========================================================
+*/
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-inline void write_carved_files(string output_file, ifstream& input_file){
-
-  // write found file in output directory
-  ifstream file_markers{output_file};
-  string carved_files_folder_name = "/media/adam/The Vault/carved_files/";
-  mkdir(carved_files_folder_name.c_str(), O_RDWR);
-
-  int i = 0;
-
-  disk_pos file_mark;
-  disk_pos filesize = 1024 * 1024 * 35;
-  uint8_t file_buff[1024 * 1024 * 35];
-
-  string line;
-
-  while (!file_markers.eof()) {
-
-    getline(file_markers, line);
-    istringstream iss{line};
-    iss >> file_mark;
-
-    input_file.seekg(file_mark);
-
-    input_file.read((char*)file_buff, filesize);
-
-    ofstream carved_file{
-      string{carved_files_folder_name + to_string(i++) + ".cr2"}};
-
-    carved_file.write((char*)file_buff, filesize);
-  }
-
-  input_file.close();
-  // print results to console
-  printf("\n\nSUCCESS!\n\n");
-
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*=========------------=============
+/*===================================
             OPEN IO FILES
- -------------======================*/
+ ===================================*/
 inline void open_io_files(ifstream & input_file, ofstream & output_file,
                    Cmd_Options & cmds, Logger & log) {
 #ifdef DEBUG
@@ -315,49 +217,9 @@ inline void open_io_files(ifstream & input_file, ofstream & output_file,
 
 
 
-
-
-
-
-/*=========------------=============
-           SIGNAL HANDLER
- -------------======================*/
-void sig_handler(int signal_number) {
-
-  ofstream quit_stream{"abort_data.txt"};
-
-  for(auto& match : block_matches)
-  {
-    quit_stream << match.first << " || ";
-    for (int i = 0; i < 16; ++i)
-    {
-      quit_stream << (*(match.second + i) > 33 && *(match.second + i) <
-              127 ? *(match.second + i) : '.');
-    }
-    quit_stream << endl;
-  }
-
-  quit_stream.close();
-  clear();
-  curs_set(1);
-  delwin(screenObj.win);
-  endwin();
-  refresh();
-  system("reset");
-  exit(0);
-}
-
-
-
-
-
-
-
-
-
-/*=========------------=============
+/*===================================
            	 SEARCH DISK
- -------------======================*/
+===================================*/
 void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
 
 #ifdef DEBUG
@@ -405,7 +267,7 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
 
           screenObj.update_found_counter();
           screenObj.print_latest_find(
-              (boost::format("%s -- %s") % to_string(main_loop_counter).c_str() %
+              (boost::format("%s -- %s") % to_string(main_counter).c_str() %
                print_hexdump(16, preview).c_str()).str());
 
           i += minimum_file_size;
@@ -413,7 +275,7 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
 #ifdef DEBUG
           log << "\nFOUND: " << print_hexdump(16, preview).c_str();
           log << "\n\tQueue.size(): " << to_string(block_queue[thread_id].size()).c_str()
-              << ", Disk Marker: " << to_string(main_loop_counter).c_str();
+              << ", Disk Marker: " << to_string(main_counter).c_str();
 #endif
 
         } else pattern_counter++;
@@ -424,15 +286,128 @@ void search_disk(int thread_id, disk_pos blocksize, bool verbose) {
 
 
 
+/*===================================
+         PROGRESS BAR THREAD
+===================================*/
+void progress_bar_thread(disk_pos offset_start, disk_pos filesize) {
+
+  while (!readingIsDone)
+  {
+    {
+      this_thread::sleep_for(500ms);
+      lock_guard<mutex> lck(print_lock);
+      //if (block_queue[0].size() < 100000) main_cv.notify_one();
+      screenObj.progress_counter =
+          (static_cast<long double>(main_counter - offset_start) /
+           filesize);
+      screenObj.refresh_progress_bar();
+    }
+  }
+}
+
+
+
+/*===================================
+           	PRINT HEXDUMP
+ ===================================*/
+inline string print_hexdump(int line_size, uint8_t* tmp) {
+
+  ostringstream oss;
+  using namespace boost;
+
+  int j = 0;
+
+  for (int i = 0; i < line_size; ++i) {
+
+    oss << format("%02x ") % (short)(tmp[j+i]);
+  }
+
+  oss << "  |";
+
+  for (int i = 0; i < line_size; ++i)
+    oss << (isascii(static_cast<int>(tmp[j+i])) ? static_cast<char>(tmp[j+i]) : '.');
+
+  oss << "|";
+  return oss.str();
+}
+
+
+
+/*===================================
+           SIGNAL HANDLER
+ ===================================*/
+void sig_handler(int signal_number) {
+
+  ofstream quit_stream{"abort_data.txt"};
+
+  for(auto& match : block_matches)
+  {
+    quit_stream << match.first << " || ";
+    for (int i = 0; i < 16; ++i)
+    {
+      quit_stream << (*(match.second + i) > 33 && *(match.second + i) <
+              127 ? *(match.second + i) : '.');
+    }
+    quit_stream << endl;
+  }
+
+  quit_stream.close();
+  clear();
+  curs_set(1);
+  delwin(screenObj.win);
+  endwin();
+  refresh();
+  system("reset");
+  exit(0);
+}
 
 
 
 
+/*===================================
+          WRITE CARVED FILES
+ ===================================*/
+inline void write_carved_files(string output_file, ifstream& input_file){
+
+  // write found file in output directory
+  ifstream file_markers{output_file};
+  string carved_files_folder_name = "/media/adam/The Vault/carved_files/";
+  mkdir(carved_files_folder_name.c_str(), O_RDWR);
+
+  int i = 0;
+
+  disk_pos file_mark;
+  disk_pos filesize = 1024 * 1024 * 35;
+  uint8_t file_buff[1024 * 1024 * 35];
+
+  string line;
+
+  while (!file_markers.eof()) {
+
+    getline(file_markers, line);
+    istringstream iss{line};
+    iss >> file_mark;
+
+    input_file.seekg(file_mark);
+
+    input_file.read((char*)file_buff, filesize);
+
+    ofstream carved_file{
+      string{carved_files_folder_name + to_string(i++) + ".cr2"}};
+
+    carved_file.write((char*)file_buff, filesize);
+  }
+
+  input_file.close();
+  // print results to console
+  printf("\n\nSUCCESS!\n\n");
+
+}
 
 
-/*=========------------=============
+/*===================================
            	PRINT RESULTS
- -------------======================*/
+ ===================================*/
 void print_results(Cmd_Options& cmds, ofstream& output_file){
 
 
@@ -447,66 +422,4 @@ void print_results(Cmd_Options& cmds, ofstream& output_file){
   for (auto& match : block_matches)
     output_file << match.first << ": " << match.second << endl;
 
-}
-
-
-
-
-
-
-
-
-
-
-/*=========------------=============
-           	PRINT HEXDUMP
- -------------======================*/
-inline string print_hexdump(int line_size, uint8_t* tmp) {
-
-  ostringstream oss;
-  using namespace boost;
-
-  int j = 0;
-
-  for (int i = 0; i < line_size; ++i) {
-    if (i % (line_size/2) == 0){
-      oss << " ";
-    }
-    oss << format("%02x ") % (short)(tmp[j+i]);
-    //oss << setw(2) << setfill('0') << hex <<
-    //        static_cast<unsigned short>(tmp[j + i]) << " ";
-  }
-
-  oss << "  |";
-
-  for (int i = 0; i < line_size; ++i)
-    oss << (isascii((int)tmp[j+i]) ? (char)(tmp[j+i]) : '.');
-
-  oss << "|";
-  return oss.str();
-};
-
-
-
-
-
-
-
-/*=========------------=============
-         PROGRESS BAR THREAD
- -------------======================*/
-void progress_bar_thread(disk_pos offset_start, disk_pos filesize) {
-
-  while (!readingIsDone)
-  {
-    {
-      this_thread::sleep_for(500ms);
-      lock_guard<mutex> lck(print_lock);
-      //if (block_queue[0].size() < 100000) main_cv.notify_one();
-      screenObj.progress_counter =
-          (static_cast<long double>(main_loop_counter - offset_start) /
-           filesize);
-      screenObj.refresh_progress_bar();
-    }
-  }
 }
