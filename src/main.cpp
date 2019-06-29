@@ -1,6 +1,6 @@
 
 #include "main.h"
-
+#include "file_header.h"
 
 mutex                print_lock{};
 mutex                main_finished_lock{};
@@ -25,6 +25,7 @@ array<mutex,thread_array_size> queue_lck{};
 array<condition_variable,thread_array_size> queue_is_empty{};
 array<deque<pair<uint8_t*,disk_pos>>,thread_array_size> block_queue{};
 
+vector<FileHeader> patterns;
 
 ScreenObj screenObj;
 disk_pos main_loop_counter;
@@ -483,6 +484,57 @@ void progress_bar_thread(disk_pos offset_start, disk_pos filesize) {
           (static_cast<long double>(main_loop_counter - offset_start) /
            filesize);
       screenObj.refresh_progress_bar();
+    }
+  }
+}
+
+
+
+
+
+/*==================================
+          PARSE HEADER FILE
+  ==================================*/
+void parse_header_file() {
+
+  ifstream header_file{"file_headers.txt"};
+  vector<string> tmp_vec;
+  string current_line;
+  string current_word;
+  header_file.getline(current_line);
+
+  while(!header_file.eof()) {
+
+    header_file.getline(current_line);
+    istringstream iss{current_line};
+    patterns.push_back();
+
+    while(iss){
+      iss >> current_word;
+      patterns.back()->file_extension = current_word;
+
+      iss >> current_word;
+
+      if(current_word == '[') {
+        iss >> current_word;
+
+        while (current_word != ']') {
+          tmp_vec.push_back(current_word);
+          iss >> current_word;
+        }
+      }
+      iss >> current_word;
+      if (current_word == '[') {
+        iss >> current_word;
+
+        while (current_word != ']') {
+          tmp_vec.push_back(current_word);
+          iss >> current_word;
+        }
+      }
+      else {
+        patterns.back().max_carve_size = stol(current_word);
+      }
     }
   }
 }

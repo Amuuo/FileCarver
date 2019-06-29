@@ -37,7 +37,7 @@
 #include "cmd_options.h"
 #include "logger.h"
 #include "screenObj.h"
-
+#include "file_header.h"
 
 using namespace std;
 typedef unsigned long long disk_pos;
@@ -58,6 +58,7 @@ void print_progress  ();
 void ncurses_testing ();
 void write_carved_files(string, ifstream&);
 void progress_bar_thread(disk_pos, disk_pos);
+void parse_header_file();
 
 extern mutex                print_lock;
 extern mutex                main_finished_lock;

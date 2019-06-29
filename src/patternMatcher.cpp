@@ -23,7 +23,7 @@ struct PatternMatcher {
 };
 
 
-
+  /*
 
 int main()
 {
@@ -57,7 +57,7 @@ int main()
     printf("\n");
   }
 
-  /*
+
   printf("\ngo_to:");
 
   for (auto go : PM.go_to) {
@@ -145,7 +145,7 @@ void PatternMatcher::create_goto(const vector<string>& patterns)
   }
   failure.resize(new_state + 1, 0);
 
-  for (char i = ' '; i <= '~'; i++)
+  for (char i = 0; i <= 0xFF; i++)
     if (go_to[0].count(i) == 0)
       go_to[0][i] = 0;
 
