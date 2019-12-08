@@ -176,26 +176,32 @@ vector<string> Cmd_Options::print_all_options() {
  -------------======================*/
 void Cmd_Options::startup_screen(){
 
-  auto print_in_middle = [](WINDOW *win, int starty, int startx, int width,
-                             char *string, chtype color) {
-    int length, x, y;
+  // lambda function print_in_middle
+  auto print_in_middle = [](WINDOW* win, int starty, int startx, int width,
+                            char* string, chtype color) {
+
+    int   length;
+    int   x;
+    int   y;
     float temp;
 
-    if (win == NULL) win = stdscr;
+    if (win == NULL) win   = stdscr;
+
     getyx(win, y, x);
-    if (startx != 0) x = startx;
-    if (starty != 0) y = starty;
-    if (width == 0) width = 80;
+
+    if (startx != 0) x     = startx;
+    if (starty != 0) y     = starty;
+    if (width  == 0) width = 80;
 
     length = strlen(string);
-    temp = (width - length) / 2;
-    x = startx + (int)temp;
-    wattron(win, color);
-    mvwprintw(win, y, x, "%s", string);
-    wattroff(win, color);
-    refresh();
-  };
+    temp   = (width - length) / 2;
+    x      = startx + (int)temp;
 
+    wattron  (win, color);
+    mvwprintw(win, y, x, "%s", string);
+    wattroff (win, color);
+    refresh  ();
+  }; //-----------------------------
 
   const int INSTRUCTION_1      = 0;
   const int INSTRUCTION_2      = 1;
@@ -228,23 +234,23 @@ void Cmd_Options::startup_screen(){
 
 
   /* Initialize the fields */
-  field[INSTRUCTION_1]      = new_field(1, 25, 1, 1, 0, 0);
-	field[INSTRUCTION_2]      = new_field(1, 25, 2, 1, 0, 0);
+  field[INSTRUCTION_1     ] = new_field(1, 25, 1, 1, 0, 0);
+	field[INSTRUCTION_2     ] = new_field(1, 25, 2, 1, 0, 0);
   field[PATH_TO_DISK_LABEL] = new_field(1, 25, 5, 1, 0, 0);
-  field[PATH_TO_DISK]       = new_field(1, 25, 6, 1, 0, 0);
+  field[PATH_TO_DISK      ] = new_field(1, 25, 6, 1, 0, 0);
   field[OFFSET_START_LABEL] = new_field(1, 25, 8, 1, 0, 0);
-  field[OFFSET_START]       = new_field(1, 25, 9, 1, 0, 0);
-  field[OFFSET_END_LABEL]   = new_field(1, 25, 11, 1, 0, 0);
-  field[OFFSET_END]         = new_field(1, 25, 12, 1, 0, 0);
-  field[BLOCKSIZE_LABEL]    = new_field(1, 25, 14, 1, 0, 0);
-  field[BLOCKSIZE]          = new_field(1, 25, 15, 1, 0, 0);
-  field[FINAL_FIELD]        = NULL;
+  field[OFFSET_START      ] = new_field(1, 25, 9, 1, 0, 0);
+  field[OFFSET_END_LABEL  ] = new_field(1, 25, 11, 1, 0, 0);
+  field[OFFSET_END        ] = new_field(1, 25, 12, 1, 0, 0);
+  field[BLOCKSIZE_LABEL   ] = new_field(1, 25, 14, 1, 0, 0);
+  field[BLOCKSIZE         ] = new_field(1, 25, 15, 1, 0, 0);
+  field[FINAL_FIELD       ] = NULL;
 
   /* Set field options */
 
   auto set_label = [&](const int tag, const char *label) {
-    set_field_back  (field[tag], A_ITALIC);
-    set_field_buffer(field[tag], 0, label);
+    set_field_back  (field[tag], A_ITALIC      );
+    set_field_buffer(field[tag], 0, label      );
     set_field_just  (field[tag], JUSTIFY_CENTER);
     set_field_opts  (field[tag], O_AUTOSKIP | O_VISIBLE | O_PUBLIC);
   };
@@ -252,9 +258,9 @@ void Cmd_Options::startup_screen(){
                               const char* default_value, const int tag) {
     set_label(tag_label, label);
     set_field_buffer(field[tag], 0, default_value);
-    set_field_back(field[tag], A_COLOR | A_BOLD);
-    set_field_just(field[tag], JUSTIFY_CENTER);
-    set_field_opts(field[tag], O_VISIBLE | O_PUBLIC | O_EDIT | O_ACTIVE);
+    set_field_back  (field[tag], A_COLOR | A_BOLD);
+    set_field_just  (field[tag], JUSTIFY_CENTER  );
+    set_field_opts  (field[tag], O_VISIBLE | O_PUBLIC | O_EDIT | O_ACTIVE);
   };
 
   set_label(INSTRUCTION_1,      "(KEY_LEFT to clear field)");
@@ -308,14 +314,14 @@ void Cmd_Options::startup_screen(){
 	}
   form_driver(my_form, REQ_END_LINE);
 	unpost_form(my_form);
-	free_form(my_form);
+	free_form  (my_form);
 	endwin();
 
 
-  input        = (char*)field[PATH_TO_DISK]->buf;
-  offset_start = atoll((char *)field[OFFSET_START]->buf);
-  offset_end   = atoll((char *)field[OFFSET_END]->buf);
-  blocksize    = atoll((char *)field[BLOCKSIZE]->buf);
+  input        =       (char*)field[PATH_TO_DISK]->buf;
+  offset_start = atoll((char*)field[OFFSET_START]->buf);
+  offset_end   = atoll((char*)field[OFFSET_END  ]->buf);
+  blocksize    = atoll((char*)field[BLOCKSIZE   ]->buf);
 
   while(isspace(input.back()))
     input.pop_back();

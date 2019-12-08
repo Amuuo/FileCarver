@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
   cin >> tester;
 
   Cmd_Options cmds(argc, argv);
-
+  pattern_matcher.import_file_signatures_and_setup_patterns();
 
 
   Logger log;
@@ -76,23 +76,21 @@ int main(int argc, char** argv) {
     log.LaunchLogWindow();
   #endif
 
+    using threadArray = array<thread, thread_array_size>;
 
+    threadArray thread_arr;
+    ifstream    input_file;
+    ofstream    output_file;
+    ofstream    header_file;
 
-  array<std::thread, thread_array_size> thread_arr;
-  ifstream input_file;
-  ofstream output_file;
-  ofstream header_file;
+    disk_pos thread_blk_sz = (cmds.blocksize / thread_array_size);
 
+    open_io_files(input_file, output_file, cmds, log);
+    uint8_t buffer[cmds.blocksize];
 
-  disk_pos thread_blk_sz = (cmds.blocksize / thread_array_size);
-
-  open_io_files(input_file, output_file, cmds, log);
-  uint8_t buffer[cmds.blocksize];
-
-  // launch search threads
-  for (int j = 0; j < thread_array_size; ++j)
-  {
-    thread_arr[j] = thread{&search_disk, j, thread_blk_sz, cmds.verbose};
+    // launch search threads
+    for (int j = 0; j < thread_array_size; ++j) {
+      thread_arr[j] = thread{&search_disk, j, thread_blk_sz, cmds.verbose};
   }
 
   offset_start = cmds.offset_start;

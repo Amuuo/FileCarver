@@ -76,15 +76,19 @@
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
     <ClCompile Include="..\..\src\cmd_options.cpp" />
+    <ClCompile Include="..\..\src\fileHeader.cpp" />
     <ClCompile Include="..\..\src\logger.cpp" />
     <ClCompile Include="..\..\src\main.cpp" />
+    <ClCompile Include="..\..\src\parse_headers_file.cpp" />
+    <ClCompile Include="..\..\src\patternMatcher.cpp" />
     <ClCompile Include="..\..\src\screenObj.cpp" />
-    <ClCompile Include="patternMatcher.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\cmd_options.h" />
+    <ClInclude Include="..\..\src\fileHeader.h" />
     <ClInclude Include="..\..\src\logger.h" />
     <ClInclude Include="..\..\src\main.h" />
+    <ClInclude Include="..\..\src\patternMatcher.h" />
     <ClInclude Include="..\..\src\screenObj.h" />
   </ItemGroup>
   <ItemDefinitionGroup />

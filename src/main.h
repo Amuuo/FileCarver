@@ -37,7 +37,7 @@
 #include "cmd_options.h"
 #include "logger.h"
 #include "screenObj.h"
-#include "file_header.h"
+#include "patternMatcher.h"
 
 using namespace std;
 typedef unsigned long long disk_pos;
@@ -87,3 +87,4 @@ extern array<deque<pair<uint8_t*,disk_pos>>,thread_array_size> block_queue;
 extern ScreenObj screenObj;
 extern disk_pos main_loop_counter;
 
+extern PatternMatcher pattern_matcher;
